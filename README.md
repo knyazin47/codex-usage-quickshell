@@ -10,10 +10,10 @@ The module is Codex-only. It does not read Claude projects or cloud billing page
 - Click-open popup in the visual style of the system panel.
 - Local token totals for today, week, last turn, input, cached input, output, and reasoning tokens.
 - Live 5-hour and weekly limit cards from the local Codex app server, with cache and local session-log fallback.
-- Source badge for limit freshness: `live`, `cache`, `stale`, or `local`.
+- Small source dot for limit freshness: `live`, `cache`, `stale`, or `local`.
 - Activity bars for the last 18 hours.
 - Smooth loading skeletons and animated value changes instead of full visual resets on refresh.
-- Settings drawer with staged changes, palette presets, generated custom palette, and Apply / Cancel.
+- Settings drawer with immediate controls, palette presets, and generated custom palette.
 - Live light/dark theme following `gsettings org.gnome.desktop.interface color-scheme`.
 - Collector pauses when the module is disabled in config.
 

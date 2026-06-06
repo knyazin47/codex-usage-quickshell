@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.3
+
+- Removed Apply / Cancel and made language and refresh interval apply immediately.
+- Added a soft fade pulse when language changes so translated text swaps less abruptly.
+- Updated the settings drawer to behave as a fully live control surface.
+
 ## 0.4.2
 
 - Replaced the custom palette color chips with a continuous hue slider.

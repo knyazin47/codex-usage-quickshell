@@ -18,7 +18,6 @@ Item {
     readonly property bool emptyError: errorState && !CodexUsage.hasData
     readonly property bool loading: !CodexUsage.hasData && !errorState
     property bool showSettings: false
-    property string pendingLanguage: "auto"
     property string pendingAccentStyle: "codex"
     property string pendingCustomAccentBase: "#86a8ff"
     property int pendingCustomAccentHue: 220
@@ -26,7 +25,7 @@ Item {
     property bool pendingShowDetailedLimits: true
     property bool pendingShowActivity: true
     property bool pendingShowTokenBreakdown: true
-    property int pendingRefreshInterval: 15
+    property real textSwapOpacity: 1
 
     readonly property bool darkTheme: SystemColorScheme.dark
     readonly property int mainWidth: 612
@@ -45,9 +44,6 @@ Item {
     readonly property color textPrimary: darkTheme ? "#f4f1f8" : "#1e1b23"
     readonly property color textSecondary: darkTheme ? "#bfb9c8" : "#6f6877"
     readonly property color outlineColor: darkTheme ? Qt.rgba(1, 1, 1, 0.11) : Qt.rgba(0.12, 0.10, 0.18, 0.12)
-
-    readonly property bool settingsDirty: pendingLanguage !== Config.options.bar.codexUsage.language
-        || pendingRefreshInterval !== Config.options.bar.codexUsage.refreshInterval
 
     implicitWidth: mainWidth + drawerOuterWidth
     implicitHeight: mainHeight
@@ -367,7 +363,6 @@ Item {
     }
 
     function syncPendingSettings() {
-        pendingLanguage = Config.options.bar.codexUsage.language;
         pendingAccentStyle = Config.options.bar.codexUsage.accentStyle;
         pendingCustomAccentBase = customAccentBase();
         pendingCustomAccentHue = customAccentHue();
@@ -375,17 +370,22 @@ Item {
         pendingShowDetailedLimits = Config.options.bar.codexUsage.showDetailedLimits;
         pendingShowActivity = Config.options.bar.codexUsage.showActivity;
         pendingShowTokenBreakdown = Config.options.bar.codexUsage.showTokenBreakdown;
-        pendingRefreshInterval = Config.options.bar.codexUsage.refreshInterval;
-    }
-
-    function applyPendingSettings() {
-        Config.options.bar.codexUsage.language = pendingLanguage;
-        Config.options.bar.codexUsage.refreshInterval = pendingRefreshInterval;
     }
 
     function applyAccentStyle(style) {
         pendingAccentStyle = style;
         Config.options.bar.codexUsage.accentStyle = style;
+    }
+
+    function applyLanguage(language) {
+        if (Config.options.bar.codexUsage.language === language)
+            return;
+        Config.options.bar.codexUsage.language = language;
+        textSwapAnimation.restart();
+    }
+
+    function applyRefreshInterval(seconds) {
+        Config.options.bar.codexUsage.refreshInterval = seconds;
     }
 
     function applyCustomAccentBase(value) {
@@ -433,6 +433,19 @@ Item {
     onShowSettingsChanged: {
         if (showSettings)
             syncPendingSettings();
+    }
+
+    SequentialAnimation {
+        id: textSwapAnimation
+
+        NumberAnimation {
+            target: root
+            property: "textSwapOpacity"
+            from: 0.42
+            to: 1
+            duration: 260
+            easing.type: Easing.OutCubic
+        }
     }
 
     StyledRectangularShadow {
@@ -483,6 +496,7 @@ Item {
         RowLayout {
             id: mainContent
             width: parent.width - 28
+            opacity: root.textSwapOpacity
             anchors {
                 top: parent.top
                 left: parent.left
@@ -991,6 +1005,7 @@ Item {
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 8
+                opacity: root.textSwapOpacity
 
                 MaterialSymbol {
                     text: "tune"
@@ -1023,15 +1038,16 @@ Item {
 
                     width: settingsScroll.width
                     spacing: 9
+                    opacity: root.textSwapOpacity
 
                     SettingsSection {
                         title: root.t("language", "язык")
                         Flow {
                             Layout.fillWidth: true
                             spacing: 7
-                            OptionChip { label: "auto"; active: root.pendingLanguage === "auto"; onClicked: root.pendingLanguage = "auto" }
-                            OptionChip { label: "ru"; active: root.pendingLanguage === "ru"; onClicked: root.pendingLanguage = "ru" }
-                            OptionChip { label: "en"; active: root.pendingLanguage === "en"; onClicked: root.pendingLanguage = "en" }
+                            OptionChip { label: "auto"; active: Config.options.bar.codexUsage.language === "auto"; onClicked: root.applyLanguage("auto") }
+                            OptionChip { label: "ru"; active: Config.options.bar.codexUsage.language === "ru"; onClicked: root.applyLanguage("ru") }
+                            OptionChip { label: "en"; active: Config.options.bar.codexUsage.language === "en"; onClicked: root.applyLanguage("en") }
                         }
                     }
 
@@ -1099,79 +1115,10 @@ Item {
                         Flow {
                             Layout.fillWidth: true
                             spacing: 6
-                            OptionChip { label: "5s"; active: root.pendingRefreshInterval === 5; onClicked: root.pendingRefreshInterval = 5 }
-                            OptionChip { label: "15s"; active: root.pendingRefreshInterval === 15; onClicked: root.pendingRefreshInterval = 15 }
-                            OptionChip { label: "30s"; active: root.pendingRefreshInterval === 30; onClicked: root.pendingRefreshInterval = 30 }
+                            OptionChip { label: "5s"; active: Config.options.bar.codexUsage.refreshInterval === 5; onClicked: root.applyRefreshInterval(5) }
+                            OptionChip { label: "15s"; active: Config.options.bar.codexUsage.refreshInterval === 15; onClicked: root.applyRefreshInterval(15) }
+                            OptionChip { label: "30s"; active: Config.options.bar.codexUsage.refreshInterval === 30; onClicked: root.applyRefreshInterval(30) }
                         }
-                    }
-                }
-            }
-
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 8
-
-                Rectangle {
-                    id: cancelButton
-
-                    Layout.fillWidth: true
-                    implicitHeight: 32
-                    enabled: root.settingsDirty
-                    opacity: enabled ? 1 : 0.42
-                    radius: 999
-                    color: cancelMouse.containsMouse
-                        ? root.chipColor
-                        : root.chipColor
-                    border.width: 1
-                    border.color: root.outlineColor
-
-                    MouseArea {
-                        id: cancelMouse
-                        anchors.fill: parent
-                        enabled: cancelButton.enabled
-                        hoverEnabled: enabled
-                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                        onClicked: root.syncPendingSettings()
-                    }
-
-                    StyledText {
-                        anchors.centerIn: parent
-                        text: root.t("Cancel", "Отмена")
-                        font.pixelSize: Appearance.font.pixelSize.smaller
-                        font.weight: Font.DemiBold
-                        color: root.textPrimary
-                    }
-                }
-
-                Rectangle {
-                    id: applyButton
-
-                    Layout.fillWidth: true
-                    implicitHeight: 32
-                    enabled: root.settingsDirty
-                    opacity: enabled ? 1 : 0.42
-                    radius: 999
-                    color: applyMouse.containsMouse
-                        ? Qt.rgba(root.accentC.r, root.accentC.g, root.accentC.b, 0.34)
-                        : Qt.rgba(root.accentB.r, root.accentB.g, root.accentB.b, 0.26)
-                    border.width: 1
-                    border.color: Qt.rgba(root.accentC.r, root.accentC.g, root.accentC.b, 0.52)
-
-                    MouseArea {
-                        id: applyMouse
-                        anchors.fill: parent
-                        enabled: applyButton.enabled
-                        hoverEnabled: enabled
-                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                        onClicked: root.applyPendingSettings()
-                    }
-
-                    StyledText {
-                        anchors.centerIn: parent
-                        text: root.t("Apply", "Применить")
-                        font.pixelSize: Appearance.font.pixelSize.smaller
-                        font.weight: Font.DemiBold
-                        color: root.textPrimary
                     }
                 }
             }
