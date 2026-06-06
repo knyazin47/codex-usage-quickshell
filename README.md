@@ -9,7 +9,8 @@ The module is Codex-only. It does not read Claude projects or cloud billing page
 - Top-bar `Codex` indicator with theme-aware icon.
 - Click-open popup in the visual style of the system panel.
 - Local token totals for today, week, last turn, input, cached input, output, and reasoning tokens.
-- Live 5-hour and weekly limit cards from the local Codex app server, with local session-log fallback.
+- Live 5-hour and weekly limit cards from the local Codex app server, with cache and local session-log fallback.
+- Source badge for limit freshness: `live`, `cache`, `stale`, or `local`.
 - Activity bars for the last 18 hours.
 - Smooth loading skeletons and animated value changes instead of full visual resets on refresh.
 - Settings drawer with staged changes and Apply / Cancel.
@@ -66,7 +67,7 @@ property JsonObject codexUsage: JsonObject {
     property bool showTokenBreakdown: true
     property bool showDetailedLimits: true
     property int refreshInterval: 15 // seconds
-    property string accentStyle: "codex" // codex, violet, clean
+    property string accentStyle: "codex" // codex, violet, mint, rose, clean
 }
 ```
 
@@ -79,6 +80,12 @@ qs -c ii -d
 ## Privacy
 
 The collector reads local Codex session JSONL files in `~/.codex/sessions` for token totals. By default it also asks the local Codex app server for the current account rate-limit snapshot, so limits stay fresh after mobile usage or reset windows.
+
+Live limit snapshots are cached under:
+
+```text
+${XDG_CACHE_HOME:-~/.cache}/codex-usage-quickshell/rate_limits.json
+```
 
 Disable live limit refresh if you want local-only behavior:
 
@@ -109,6 +116,13 @@ CODEX_USAGE_INCLUDE_ARCHIVED=1 ~/.config/quickshell/ii/scripts/codex-usage/codex
 ```
 
 Large session histories can be expensive to scan frequently. The UI defaults to 15 seconds and clamps refresh values to at least 5 seconds. Live limit refresh has a short timeout and silently falls back to local session metadata if the Codex app server cannot respond.
+
+Live limit cache timing can be tuned:
+
+```bash
+CODEX_USAGE_LIVE_CACHE_SECONDS=60 ~/.config/quickshell/ii/scripts/codex-usage/codex_usage.py
+CODEX_USAGE_LIVE_STALE_SECONDS=900 ~/.config/quickshell/ii/scripts/codex-usage/codex_usage.py
+```
 
 ## License
 

@@ -39,6 +39,8 @@ Singleton {
     property list<real> activity: [0.08, 0.16, 0.24, 0.18, 0.32, 0.22, 0.12, 0.2]
     property var activityDetails: []
     property var limits: []
+    property string limitsSource: "local"
+    property string limitsSyncedAt: ""
     property bool hasData: false
     readonly property bool enabled: Config.options.bar.codexUsage.enable
     readonly property bool refreshing: collector.running
@@ -94,6 +96,8 @@ Singleton {
         root.activity = data.activity ?? root.activity;
         root.activityDetails = data.activityDetails ?? [];
         root.limits = data.limits ?? [];
+        root.limitsSource = data.limitsSource ?? "local";
+        root.limitsSyncedAt = data.limitsSyncedAt ?? "";
     }
 
     onEnabledChanged: {

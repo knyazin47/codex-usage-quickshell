@@ -32,6 +32,10 @@ INCLUDE_WORKSPACE = os.environ.get("CODEX_USAGE_INCLUDE_WORKSPACE") == "1"
 INCLUDE_ARCHIVED = os.environ.get("CODEX_USAGE_INCLUDE_ARCHIVED") == "1"
 LIVE_LIMITS_ENABLED = os.environ.get("CODEX_USAGE_LIVE_LIMITS", "1") != "0"
 LIVE_LIMITS_TIMEOUT_SECONDS = 3.0
+LIVE_LIMITS_CACHE_SECONDS_DEFAULT = 45
+LIVE_LIMITS_STALE_SECONDS_DEFAULT = 600
+XDG_CACHE_HOME = pathlib.Path(os.environ.get("XDG_CACHE_HOME") or HOME / ".cache")
+LIVE_LIMITS_CACHE_PATH = XDG_CACHE_HOME / "codex-usage-quickshell" / "rate_limits.json"
 
 
 @dataclass
@@ -45,6 +49,13 @@ class UsageEvent:
     model_context_window: int
     cwd: str
     rate_limits: dict[str, Any]
+
+
+@dataclass
+class RateLimitResult:
+    snapshots: list[dict[str, Any]]
+    source: str
+    synced_at: dt.datetime | None
 
 
 def parse_timestamp(value: str | None) -> dt.datetime | None:
@@ -109,6 +120,58 @@ def env_int(name: str, default: int, minimum: int, maximum: int) -> int:
     return max(minimum, min(maximum, value))
 
 
+def live_cache_seconds() -> int:
+    return env_int("CODEX_USAGE_LIVE_CACHE_SECONDS", LIVE_LIMITS_CACHE_SECONDS_DEFAULT, 5, 3600)
+
+
+def live_stale_seconds() -> int:
+    return env_int("CODEX_USAGE_LIVE_STALE_SECONDS", LIVE_LIMITS_STALE_SECONDS_DEFAULT, 0, 86400)
+
+
+def read_live_limits_cache(now: dt.datetime, max_age_seconds: int) -> RateLimitResult:
+    # Fresh cache keeps fast UI refreshes cheap. Stale cache is used only as a
+    # softer fallback when the live endpoint is unavailable for a short while.
+    try:
+        cache = json.loads(LIVE_LIMITS_CACHE_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return RateLimitResult([], "local", None)
+
+    synced_at = parse_timestamp(cache.get("syncedAt"))
+    snapshots = cache.get("rateLimits") or []
+    if synced_at is None or not isinstance(snapshots, list):
+        return RateLimitResult([], "local", None)
+
+    age_seconds = max(0, int((now - synced_at).total_seconds()))
+    if age_seconds <= max_age_seconds:
+        source = "cache" if age_seconds <= live_cache_seconds() else "stale"
+        return RateLimitResult(
+            [snapshot for snapshot in snapshots if isinstance(snapshot, dict)],
+            source,
+            synced_at,
+        )
+    return RateLimitResult([], "local", synced_at)
+
+
+def write_live_limits_cache(snapshots: list[dict[str, Any]], synced_at: dt.datetime) -> None:
+    try:
+        # Cache writes are best-effort: a read-only cache directory should not
+        # make the Quickshell widget fail or hide local usage data.
+        LIVE_LIMITS_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        LIVE_LIMITS_CACHE_PATH.write_text(
+            json.dumps(
+                {
+                    "syncedAt": synced_at.isoformat(timespec="seconds"),
+                    "rateLimits": snapshots,
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+            encoding="utf-8",
+        )
+    except OSError:
+        return
+
+
 def normalize_live_window(window: dict[str, Any] | None) -> dict[str, Any]:
     window = window or {}
     return {
@@ -135,13 +198,21 @@ def normalize_live_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def fetch_live_rate_limits(timeout_seconds: float = LIVE_LIMITS_TIMEOUT_SECONDS) -> list[dict[str, Any]]:
+def fetch_live_rate_limits(timeout_seconds: float = LIVE_LIMITS_TIMEOUT_SECONDS) -> RateLimitResult:
     """Read the same live account rate-limit snapshot that Codex Desktop uses."""
+    now = dt.datetime.now().astimezone()
     if not LIVE_LIMITS_ENABLED:
-        return []
+        return RateLimitResult([], "local", None)
+
+    # The panel may refresh every five seconds; the account snapshot does not
+    # need to start a Codex app-server process every time.
+    cached = read_live_limits_cache(now, live_cache_seconds())
+    if cached.snapshots:
+        return cached
+
     codex = shutil.which("codex")
     if not codex:
-        return []
+        return read_live_limits_cache(now, live_stale_seconds())
 
     proc: subprocess.Popen[str] | None = None
     selector: selectors.BaseSelector | None = None
@@ -154,7 +225,7 @@ def fetch_live_rate_limits(timeout_seconds: float = LIVE_LIMITS_TIMEOUT_SECONDS)
             text=True,
         )
         if proc.stdin is None or proc.stdout is None:
-            return []
+            return read_live_limits_cache(now, live_stale_seconds())
 
         requests = (
             {
@@ -190,10 +261,15 @@ def fetch_live_rate_limits(timeout_seconds: float = LIVE_LIMITS_TIMEOUT_SECONDS)
                 continue
             result = message.get("result") or {}
             by_id = result.get("rateLimitsByLimitId") or {}
+            # Newer Codex builds expose a multi-limit map. Older builds expose
+            # one historical snapshot, so support both shapes.
             snapshots = list(by_id.values()) if by_id else [result.get("rateLimits")]
-            return [normalize_live_snapshot(snapshot) for snapshot in snapshots if isinstance(snapshot, dict)]
+            normalized = [normalize_live_snapshot(snapshot) for snapshot in snapshots if isinstance(snapshot, dict)]
+            synced_at = dt.datetime.now().astimezone()
+            write_live_limits_cache(normalized, synced_at)
+            return RateLimitResult(normalized, "live", synced_at)
     except (OSError, subprocess.SubprocessError):
-        return []
+        return read_live_limits_cache(now, live_stale_seconds())
     finally:
         if selector is not None:
             selector.close()
@@ -203,7 +279,7 @@ def fetch_live_rate_limits(timeout_seconds: float = LIVE_LIMITS_TIMEOUT_SECONDS)
                 proc.wait(timeout=0.5)
             except subprocess.TimeoutExpired:
                 proc.kill()
-    return []
+    return read_live_limits_cache(now, live_stale_seconds())
 
 
 def format_reset(epoch: int | None, now: dt.datetime) -> str:
@@ -460,7 +536,7 @@ def build_summary(days_back: int = 8) -> dict[str, Any]:
     week_events = [event for event in events if event.timestamp.date() >= week_start]
     latest = events[-1] if events else None
     live_rate_limits = fetch_live_rate_limits()
-    limits = build_limits(events, now, live_rate_limits)
+    limits = build_limits(events, now, live_rate_limits.snapshots)
     main_limit = limits[0] if limits else {"rows": []}
     main_rows = main_limit.get("rows") or []
     primary_row = main_rows[0] if len(main_rows) > 0 else {}
@@ -524,7 +600,8 @@ def build_summary(days_back: int = 8) -> dict[str, Any]:
         "eventCount": len(today_events),
         "activity": sparkline(hourly, 18),
         "activityDetails": activity_details(hourly, 18),
-        "limitsSource": "live" if live_rate_limits else "local",
+        "limitsSource": live_rate_limits.source,
+        "limitsSyncedAt": live_rate_limits.synced_at.isoformat(timespec="minutes") if live_rate_limits.synced_at else "",
         "limits": limits,
     }
 

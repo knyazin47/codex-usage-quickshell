@@ -31,9 +31,9 @@ Item {
     readonly property int drawerWidth: 218
     readonly property int drawerGap: 10
     readonly property int drawerOuterWidth: drawerWidth + drawerGap
-    readonly property color accentA: Config.options.bar.codexUsage.accentStyle === "clean" ? "#dfe5ff" : "#86a8ff"
-    readonly property color accentB: Config.options.bar.codexUsage.accentStyle === "violet" ? "#bd8cff" : "#948cff"
-    readonly property color accentC: Config.options.bar.codexUsage.accentStyle === "clean" ? "#aebaff" : "#65d7ff"
+    readonly property color accentA: accentColorA(Config.options.bar.codexUsage.accentStyle)
+    readonly property color accentB: accentColorB(Config.options.bar.codexUsage.accentStyle)
+    readonly property color accentC: accentColorC(Config.options.bar.codexUsage.accentStyle)
     readonly property color panelColor: darkTheme ? "#121114" : "#fbfbff"
     readonly property color subPanelColor: darkTheme ? "#46444d" : "#f1f0fa"
     readonly property color tileColor: darkTheme ? "#3f3d46" : "#ffffff"
@@ -59,6 +59,72 @@ Item {
 
     function shortTime(value) {
         return value && value.length >= 16 ? value.slice(11, 16) : "--:--";
+    }
+
+    function accentColorA(style) {
+        if (style === "clean")
+            return "#dfe5ff";
+        if (style === "violet")
+            return "#9f91ff";
+        if (style === "mint")
+            return "#62dcb4";
+        if (style === "rose")
+            return "#ff8fb3";
+        return "#86a8ff";
+    }
+
+    function accentColorB(style) {
+        if (style === "clean")
+            return "#aebaff";
+        if (style === "violet")
+            return "#bd8cff";
+        if (style === "mint")
+            return "#7aa2ff";
+        if (style === "rose")
+            return "#9c8cff";
+        return "#948cff";
+    }
+
+    function accentColorC(style) {
+        if (style === "clean")
+            return "#7aa2ff";
+        if (style === "violet")
+            return "#ff9ee8";
+        if (style === "mint")
+            return "#8cf4de";
+        if (style === "rose")
+            return "#66d9ff";
+        return "#65d7ff";
+    }
+
+    function sourceLabel(source) {
+        if (source === "live")
+            return "live";
+        if (source === "cache")
+            return "cache";
+        if (source === "stale")
+            return "stale";
+        return "local";
+    }
+
+    function sourceColor(source) {
+        if (source === "live")
+            return "#62dcb4";
+        if (source === "cache")
+            return root.accentC;
+        if (source === "stale")
+            return "#f0c36a";
+        return root.textSecondary;
+    }
+
+    function sourceTooltip() {
+        if (CodexUsage.limitsSource === "live")
+            return root.t("Live account limits", "Живые лимиты аккаунта");
+        if (CodexUsage.limitsSource === "cache")
+            return `${root.t("Cached live limits", "Кэш живых лимитов")} · ${root.shortTime(CodexUsage.limitsSyncedAt)}`;
+        if (CodexUsage.limitsSource === "stale")
+            return `${root.t("Stale live cache", "Устаревший live-кэш")} · ${root.shortTime(CodexUsage.limitsSyncedAt)}`;
+        return root.t("Local session metadata", "Локальные данные сессий");
     }
 
     function limitLabel(label) {
@@ -430,12 +496,21 @@ Item {
                             elide: Text.ElideRight
                         }
 
-                        StyledText {
+                        RowLayout {
                             Layout.fillWidth: true
-                            text: root.updatedText()
-                            font.pixelSize: Appearance.font.pixelSize.smaller
-                            color: root.textSecondary
-                            elide: Text.ElideRight
+                            spacing: 6
+
+                            StyledText {
+                                Layout.fillWidth: true
+                                text: root.updatedText()
+                                font.pixelSize: Appearance.font.pixelSize.smaller
+                                color: root.textSecondary
+                                elide: Text.ElideRight
+                            }
+
+                            DataSourceBadge {
+                                visible: !root.loading && !root.emptyError
+                            }
                         }
                     }
 
@@ -699,13 +774,15 @@ Item {
             }
 
             SettingsSection {
-                title: root.t("accent", "акцент")
+                title: root.t("palette", "палитра")
                 Flow {
                     Layout.fillWidth: true
-                    spacing: 7
-                    OptionChip { label: "codex"; active: root.pendingAccentStyle === "codex"; onClicked: root.pendingAccentStyle = "codex" }
-                    OptionChip { label: "violet"; active: root.pendingAccentStyle === "violet"; onClicked: root.pendingAccentStyle = "violet" }
-                    OptionChip { label: "clean"; active: root.pendingAccentStyle === "clean"; onClicked: root.pendingAccentStyle = "clean" }
+                    spacing: 6
+                    PaletteChip { label: "codex"; styleName: "codex"; active: root.pendingAccentStyle === "codex"; onClicked: root.pendingAccentStyle = "codex" }
+                    PaletteChip { label: "violet"; styleName: "violet"; active: root.pendingAccentStyle === "violet"; onClicked: root.pendingAccentStyle = "violet" }
+                    PaletteChip { label: "mint"; styleName: "mint"; active: root.pendingAccentStyle === "mint"; onClicked: root.pendingAccentStyle = "mint" }
+                    PaletteChip { label: "rose"; styleName: "rose"; active: root.pendingAccentStyle === "rose"; onClicked: root.pendingAccentStyle = "rose" }
+                    PaletteChip { label: "clean"; styleName: "clean"; active: root.pendingAccentStyle === "clean"; onClicked: root.pendingAccentStyle = "clean" }
                 }
             }
 
@@ -1355,6 +1432,132 @@ Item {
             font.weight: Font.DemiBold
             color: root.textSecondary
             elide: Text.ElideRight
+        }
+    }
+
+    component DataSourceBadge: MouseArea {
+        id: badge
+
+        readonly property color badgeColor: root.sourceColor(CodexUsage.limitsSource)
+
+        Layout.preferredWidth: badgeRow.implicitWidth + 14
+        Layout.preferredHeight: 20
+        hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
+
+        Rectangle {
+            anchors.fill: parent
+            radius: 999
+            color: Qt.rgba(badge.badgeColor.r, badge.badgeColor.g, badge.badgeColor.b, 0.14)
+            border.width: 1
+            border.color: Qt.rgba(badge.badgeColor.r, badge.badgeColor.g, badge.badgeColor.b, 0.36)
+
+            Behavior on color {
+                ColorAnimation { duration: 140; easing.type: Easing.OutCubic }
+            }
+            Behavior on border.color {
+                ColorAnimation { duration: 140; easing.type: Easing.OutCubic }
+            }
+        }
+
+        Row {
+            id: badgeRow
+            anchors.centerIn: parent
+            spacing: 5
+
+            Rectangle {
+                anchors.verticalCenter: parent.verticalCenter
+                width: 6
+                height: 6
+                radius: 999
+                color: badge.badgeColor
+            }
+
+            StyledText {
+                anchors.verticalCenter: parent.verticalCenter
+                text: root.sourceLabel(CodexUsage.limitsSource)
+                font.pixelSize: Appearance.font.pixelSize.smallest
+                font.weight: Font.DemiBold
+                color: root.textPrimary
+            }
+        }
+
+        StyledToolTip {
+            extraVisibleCondition: badge.containsMouse
+            text: root.sourceTooltip()
+        }
+    }
+
+    component PaletteChip: MouseArea {
+        id: palette
+
+        required property string label
+        required property string styleName
+        property bool active: false
+        readonly property color swatchA: root.accentColorA(styleName)
+        readonly property color swatchB: root.accentColorB(styleName)
+        readonly property color swatchC: root.accentColorC(styleName)
+
+        hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
+        implicitWidth: 92
+        implicitHeight: 30
+
+        Rectangle {
+            anchors.fill: parent
+            radius: 999
+            color: palette.active
+                ? Qt.rgba(palette.swatchB.r, palette.swatchB.g, palette.swatchB.b, 0.22)
+                : palette.containsMouse
+                    ? root.chipColor
+                    : root.chipColor
+            border.width: 1
+            border.color: palette.active
+                ? Qt.rgba(palette.swatchC.r, palette.swatchC.g, palette.swatchC.b, 0.58)
+                : root.outlineColor
+
+            Behavior on color {
+                ColorAnimation { duration: 140; easing.type: Easing.OutCubic }
+            }
+            Behavior on border.color {
+                ColorAnimation { duration: 140; easing.type: Easing.OutCubic }
+            }
+        }
+
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: 10
+            anchors.rightMargin: 10
+            spacing: 7
+
+            Row {
+                Layout.alignment: Qt.AlignVCenter
+                spacing: -2
+
+                Repeater {
+                    model: [palette.swatchA, palette.swatchB, palette.swatchC]
+
+                    Rectangle {
+                        required property color modelData
+
+                        width: 10
+                        height: 10
+                        radius: 999
+                        color: modelData
+                        border.width: 1
+                        border.color: Qt.rgba(1, 1, 1, root.darkTheme ? 0.18 : 0.72)
+                    }
+                }
+            }
+
+            StyledText {
+                Layout.fillWidth: true
+                text: palette.label
+                font.pixelSize: Appearance.font.pixelSize.smaller
+                font.weight: palette.active ? Font.DemiBold : Font.Normal
+                color: palette.active ? root.textPrimary : root.textSecondary
+                elide: Text.ElideRight
+            }
         }
     }
 
