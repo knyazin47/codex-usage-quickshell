@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.2
+
+- Replaced the custom palette color chips with a continuous hue slider.
+- Removed the extra custom palette preview strip.
+- Made `show` toggles apply immediately and animate the main sections in and out.
+- Replaced the source badge with a small status dot beside the `Codex Usage` title.
+
 ## 0.4.1
 
 - Made palette selection, base color, and warm/cool temperature apply immediately while editing.

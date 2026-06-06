@@ -21,6 +21,7 @@ Item {
     property string pendingLanguage: "auto"
     property string pendingAccentStyle: "codex"
     property string pendingCustomAccentBase: "#86a8ff"
+    property int pendingCustomAccentHue: 220
     property int pendingCustomAccentTemperature: 0
     property bool pendingShowDetailedLimits: true
     property bool pendingShowActivity: true
@@ -46,9 +47,6 @@ Item {
     readonly property color outlineColor: darkTheme ? Qt.rgba(1, 1, 1, 0.11) : Qt.rgba(0.12, 0.10, 0.18, 0.12)
 
     readonly property bool settingsDirty: pendingLanguage !== Config.options.bar.codexUsage.language
-        || pendingShowDetailedLimits !== Config.options.bar.codexUsage.showDetailedLimits
-        || pendingShowActivity !== Config.options.bar.codexUsage.showActivity
-        || pendingShowTokenBreakdown !== Config.options.bar.codexUsage.showTokenBreakdown
         || pendingRefreshInterval !== Config.options.bar.codexUsage.refreshInterval
 
     implicitWidth: mainWidth + drawerOuterWidth
@@ -76,7 +74,16 @@ Item {
     }
 
     function customAccentBase() {
-        return normalizedHex(Config.options.bar.codexUsage.customAccentBase, "#86a8ff");
+        return hslToHex({
+            "h": customAccentHue(),
+            "s": 0.78,
+            "l": 0.70
+        });
+    }
+
+    function customAccentHue() {
+        const fallbackHue = rgbToHsl(hexToRgb(normalizedHex(Config.options.bar.codexUsage.customAccentBase, "#86a8ff"))).h;
+        return Math.round(clampNumber(Config.options.bar.codexUsage.customAccentHue, 0, 360, fallbackHue));
     }
 
     function customAccentTemperature() {
@@ -99,6 +106,10 @@ Item {
 
     function rgbToHex(rgb) {
         return `#${componentToHex(rgb.r)}${componentToHex(rgb.g)}${componentToHex(rgb.b)}`;
+    }
+
+    function hslToHex(hsl) {
+        return rgbToHex(hslToRgb(hsl));
     }
 
     function rgbToHsl(rgb) {
@@ -359,6 +370,7 @@ Item {
         pendingLanguage = Config.options.bar.codexUsage.language;
         pendingAccentStyle = Config.options.bar.codexUsage.accentStyle;
         pendingCustomAccentBase = customAccentBase();
+        pendingCustomAccentHue = customAccentHue();
         pendingCustomAccentTemperature = customAccentTemperature();
         pendingShowDetailedLimits = Config.options.bar.codexUsage.showDetailedLimits;
         pendingShowActivity = Config.options.bar.codexUsage.showActivity;
@@ -368,9 +380,6 @@ Item {
 
     function applyPendingSettings() {
         Config.options.bar.codexUsage.language = pendingLanguage;
-        Config.options.bar.codexUsage.showDetailedLimits = pendingShowDetailedLimits;
-        Config.options.bar.codexUsage.showActivity = pendingShowActivity;
-        Config.options.bar.codexUsage.showTokenBreakdown = pendingShowTokenBreakdown;
         Config.options.bar.codexUsage.refreshInterval = pendingRefreshInterval;
     }
 
@@ -382,6 +391,17 @@ Item {
     function applyCustomAccentBase(value) {
         const accent = normalizedHex(value, "#86a8ff");
         pendingCustomAccentBase = accent;
+        pendingCustomAccentHue = Math.round(rgbToHsl(hexToRgb(accent)).h);
+        Config.options.bar.codexUsage.customAccentHue = pendingCustomAccentHue;
+        Config.options.bar.codexUsage.customAccentBase = accent;
+    }
+
+    function applyCustomAccentHue(value) {
+        const hue = Math.round(clampNumber(value, 0, 360, 220));
+        const accent = hslToHex({ "h": hue, "s": 0.78, "l": 0.70 });
+        pendingCustomAccentHue = hue;
+        pendingCustomAccentBase = accent;
+        Config.options.bar.codexUsage.customAccentHue = hue;
         Config.options.bar.codexUsage.customAccentBase = accent;
     }
 
@@ -389,6 +409,21 @@ Item {
         const temperature = Math.round(clampNumber(value, -100, 100, 0));
         pendingCustomAccentTemperature = temperature;
         Config.options.bar.codexUsage.customAccentTemperature = temperature;
+    }
+
+    function setDetailedLimitsShown(value) {
+        pendingShowDetailedLimits = value;
+        Config.options.bar.codexUsage.showDetailedLimits = value;
+    }
+
+    function setActivityShown(value) {
+        pendingShowActivity = value;
+        Config.options.bar.codexUsage.showActivity = value;
+    }
+
+    function setTokenBreakdownShown(value) {
+        pendingShowTokenBreakdown = value;
+        Config.options.bar.codexUsage.showTokenBreakdown = value;
     }
 
     Component.onCompleted: {
@@ -650,13 +685,25 @@ Item {
                         Layout.fillWidth: true
                         spacing: 2
 
-                        StyledText {
+                        RowLayout {
                             Layout.fillWidth: true
-                            text: "Codex Usage"
-                            font.pixelSize: Appearance.font.pixelSize.large
-                            font.weight: Font.Bold
-                            color: root.textPrimary
-                            elide: Text.ElideRight
+                            spacing: 7
+
+                            StyledText {
+                                text: "Codex Usage"
+                                font.pixelSize: Appearance.font.pixelSize.large
+                                font.weight: Font.Bold
+                                color: root.textPrimary
+                                elide: Text.ElideRight
+                            }
+
+                            DataSourceDot {
+                                visible: !root.loading && !root.emptyError
+                            }
+
+                            Item {
+                                Layout.fillWidth: true
+                            }
                         }
 
                         RowLayout {
@@ -671,9 +718,6 @@ Item {
                                 elide: Text.ElideRight
                             }
 
-                            DataSourceBadge {
-                                visible: !root.loading && !root.emptyError
-                            }
                         }
                     }
 
@@ -762,9 +806,22 @@ Item {
                 }
 
                 ColumnLayout {
+                    property bool expanded: Config.options.bar.codexUsage.showDetailedLimits && !root.compact && !root.emptyError
+                    property real animatedHeight: expanded ? implicitHeight : 0
+
                     Layout.fillWidth: true
-                    visible: Config.options.bar.codexUsage.showDetailedLimits && !root.compact && !root.emptyError
+                    Layout.preferredHeight: animatedHeight
+                    visible: expanded || animatedHeight > 1
+                    opacity: expanded ? 1 : 0
                     spacing: 7
+                    clip: true
+
+                    Behavior on animatedHeight {
+                        NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                    }
+                    Behavior on opacity {
+                        NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
+                    }
 
                     LimitModelCard {
                         Layout.fillWidth: true
@@ -781,9 +838,22 @@ Item {
                 }
 
                 ColumnLayout {
+                    property bool expanded: Config.options.bar.codexUsage.showActivity && !root.compact && !root.emptyError
+                    property real animatedHeight: expanded ? implicitHeight : 0
+
                     Layout.fillWidth: true
-                    visible: Config.options.bar.codexUsage.showActivity && !root.compact && !root.emptyError
+                    Layout.preferredHeight: animatedHeight
+                    visible: expanded || animatedHeight > 1
+                    opacity: expanded ? 1 : 0
                     spacing: 6
+                    clip: true
+
+                    Behavior on animatedHeight {
+                        NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                    }
+                    Behavior on opacity {
+                        NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
+                    }
 
                     RowLayout {
                         Layout.fillWidth: true
@@ -857,9 +927,22 @@ Item {
                 }
 
                 Flow {
+                    property bool expanded: Config.options.bar.codexUsage.showTokenBreakdown && !root.balanced && !root.compact && !root.loading
+                    property real animatedHeight: expanded ? implicitHeight : 0
+
                     Layout.fillWidth: true
-                    visible: Config.options.bar.codexUsage.showTokenBreakdown && !root.balanced && !root.compact && !root.loading
+                    Layout.preferredHeight: animatedHeight
+                    visible: expanded || animatedHeight > 1
+                    opacity: expanded ? 1 : 0
                     spacing: 7
+                    clip: true
+
+                    Behavior on animatedHeight {
+                        NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                    }
+                    Behavior on opacity {
+                        NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
+                    }
 
                     StatPill { label: root.t("week", "неделя"); value: CodexUsage.weekTokensText }
                     StatPill { label: root.t("input", "вход"); value: CodexUsage.inputTokensText }
@@ -972,31 +1055,12 @@ Item {
 
                         ColumnLayout {
                             Layout.fillWidth: true
-                            spacing: 7
+                            spacing: 9
 
-                            Rectangle {
+                            HueSlider {
                                 Layout.fillWidth: true
-                                implicitHeight: 28
-                                radius: 999
-                                border.width: 1
-                                border.color: root.outlineColor
-                                gradient: Gradient {
-                                    GradientStop { position: 0.0; color: root.previewAccentColorA("custom") }
-                                    GradientStop { position: 0.55; color: root.previewAccentColorB("custom") }
-                                    GradientStop { position: 1.0; color: root.previewAccentColorC("custom") }
-                                }
-                            }
-
-                            Flow {
-                                Layout.fillWidth: true
-                                spacing: 7
-
-                                BaseColorChip { colorValue: "#86a8ff"; active: root.pendingCustomAccentBase === colorValue; onClicked: root.applyCustomAccentBase(colorValue) }
-                                BaseColorChip { colorValue: "#9f91ff"; active: root.pendingCustomAccentBase === colorValue; onClicked: root.applyCustomAccentBase(colorValue) }
-                                BaseColorChip { colorValue: "#62dcb4"; active: root.pendingCustomAccentBase === colorValue; onClicked: root.applyCustomAccentBase(colorValue) }
-                                BaseColorChip { colorValue: "#ff8fb3"; active: root.pendingCustomAccentBase === colorValue; onClicked: root.applyCustomAccentBase(colorValue) }
-                                BaseColorChip { colorValue: "#f0c36a"; active: root.pendingCustomAccentBase === colorValue; onClicked: root.applyCustomAccentBase(colorValue) }
-                                BaseColorChip { colorValue: "#65d7ff"; active: root.pendingCustomAccentBase === colorValue; onClicked: root.applyCustomAccentBase(colorValue) }
+                                value: root.pendingCustomAccentHue
+                                onMoved: newValue => root.applyCustomAccentHue(newValue)
                             }
 
                             TemperatureSlider {
@@ -1014,18 +1078,18 @@ Item {
                             spacing: 7
                             ToggleRow {
                                 label: root.t("limits", "лимиты")
-                                checked: root.pendingShowDetailedLimits
-                                onClicked: root.pendingShowDetailedLimits = !root.pendingShowDetailedLimits
+                                checked: Config.options.bar.codexUsage.showDetailedLimits
+                                onClicked: root.setDetailedLimitsShown(!Config.options.bar.codexUsage.showDetailedLimits)
                             }
                             ToggleRow {
                                 label: root.t("activity", "активность")
-                                checked: root.pendingShowActivity
-                                onClicked: root.pendingShowActivity = !root.pendingShowActivity
+                                checked: Config.options.bar.codexUsage.showActivity
+                                onClicked: root.setActivityShown(!Config.options.bar.codexUsage.showActivity)
                             }
                             ToggleRow {
                                 label: root.t("tokens", "токены")
-                                checked: root.pendingShowTokenBreakdown
-                                onClicked: root.pendingShowTokenBreakdown = !root.pendingShowTokenBreakdown
+                                checked: Config.options.bar.codexUsage.showTokenBreakdown
+                                onClicked: root.setTokenBreakdownShown(!Config.options.bar.codexUsage.showTokenBreakdown)
                             }
                         }
                     }
@@ -1654,59 +1718,37 @@ Item {
         }
     }
 
-    component DataSourceBadge: MouseArea {
-        id: badge
+    component DataSourceDot: MouseArea {
+        id: dot
 
-        readonly property color badgeColor: root.sourceColor(CodexUsage.limitsSource)
+        readonly property color dotColor: root.sourceColor(CodexUsage.limitsSource)
 
         Layout.alignment: Qt.AlignVCenter
-        Layout.preferredWidth: badgeRow.implicitWidth + 14
-        Layout.preferredHeight: 20
+        Layout.preferredWidth: 14
+        Layout.preferredHeight: 14
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
 
         Rectangle {
-            anchors.fill: parent
-            radius: 999
-            color: Qt.rgba(badge.badgeColor.r, badge.badgeColor.g, badge.badgeColor.b, 0.14)
-            border.width: 1
-            border.color: Qt.rgba(badge.badgeColor.r, badge.badgeColor.g, badge.badgeColor.b, 0.36)
-
-            Behavior on color {
-                ColorAnimation { duration: 140; easing.type: Easing.OutCubic }
-            }
-            Behavior on border.color {
-                ColorAnimation { duration: 140; easing.type: Easing.OutCubic }
-            }
-        }
-
-        Row {
-            id: badgeRow
             anchors.centerIn: parent
-            spacing: 5
+            width: 8
+            height: 8
+            radius: 999
+            color: dot.dotColor
+            border.width: 1
+            border.color: Qt.rgba(dot.dotColor.r, dot.dotColor.g, dot.dotColor.b, 0.58)
+            opacity: dot.containsMouse ? 1 : 0.84
 
-            Rectangle {
-                anchors.verticalCenter: parent.verticalCenter
-                width: 6
-                height: 6
-                radius: 999
-                color: badge.badgeColor
-            }
-
-            StyledText {
-                anchors.verticalCenter: parent.verticalCenter
-                text: root.sourceLabel(CodexUsage.limitsSource)
-                font.pixelSize: Appearance.font.pixelSize.smallest
-                font.weight: Font.DemiBold
-                color: root.textPrimary
+            Behavior on opacity {
+                NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
             }
         }
 
         StyledToolTip {
-            extraVisibleCondition: badge.containsMouse
+            extraVisibleCondition: dot.containsMouse
             text: CodexUsage.limitsError.length > 0
-                ? `${root.sourceTooltip()} · ${CodexUsage.limitsError}`
-                : root.sourceTooltip()
+                ? `${root.sourceLabel(CodexUsage.limitsSource)} · ${root.sourceTooltip()} · ${CodexUsage.limitsError}`
+                : `${root.sourceLabel(CodexUsage.limitsSource)} · ${root.sourceTooltip()}`
         }
     }
 
@@ -1783,27 +1825,63 @@ Item {
         }
     }
 
-    component BaseColorChip: MouseArea {
-        id: baseChip
+    component HueSlider: MouseArea {
+        id: slider
 
-        required property string colorValue
-        property bool active: false
+        property int value: 220
 
-        implicitWidth: 25
-        implicitHeight: 25
+        signal moved(int newValue)
+
+        implicitHeight: 28
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
 
-        Rectangle {
-            anchors.fill: parent
-            radius: 999
-            color: baseChip.colorValue
-            border.width: baseChip.active ? 2 : 1
-            border.color: baseChip.active ? root.textPrimary : Qt.rgba(1, 1, 1, root.darkTheme ? 0.22 : 0.82)
-            scale: baseChip.containsMouse ? 1.06 : 1
+        function updateFromX(xValue) {
+            const ratio = Math.max(0, Math.min(1, xValue / Math.max(1, width)));
+            slider.moved(Math.round(ratio * 360));
+        }
 
-            Behavior on scale {
-                NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
+        onPressed: event => slider.updateFromX(event.x)
+        onPositionChanged: event => {
+            if (pressed)
+                slider.updateFromX(event.x);
+        }
+
+        Rectangle {
+            id: hueTrack
+            anchors {
+                left: parent.left
+                right: parent.right
+                verticalCenter: parent.verticalCenter
+            }
+            height: 12
+            radius: 999
+            border.width: 1
+            border.color: root.outlineColor
+            gradient: Gradient {
+                orientation: Gradient.Horizontal
+                GradientStop { position: 0.0; color: "#ff5f7a" }
+                GradientStop { position: 0.16; color: "#f0c36a" }
+                GradientStop { position: 0.33; color: "#62dcb4" }
+                GradientStop { position: 0.50; color: "#65d7ff" }
+                GradientStop { position: 0.66; color: "#7aa2ff" }
+                GradientStop { position: 0.83; color: "#bd8cff" }
+                GradientStop { position: 1.0; color: "#ff5f7a" }
+            }
+        }
+
+        Rectangle {
+            width: 20
+            height: 20
+            radius: 999
+            x: Math.max(0, Math.min(parent.width - width, (slider.value / 360) * parent.width - width / 2))
+            y: hueTrack.y + hueTrack.height / 2 - height / 2
+            color: root.hslToHex({ "h": slider.value, "s": 0.78, "l": 0.70 })
+            border.width: 2
+            border.color: root.textPrimary
+
+            Behavior on x {
+                NumberAnimation { duration: 70; easing.type: Easing.OutCubic }
             }
         }
     }

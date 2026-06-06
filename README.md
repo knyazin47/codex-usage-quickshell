@@ -68,6 +68,7 @@ property JsonObject codexUsage: JsonObject {
     property bool showDetailedLimits: true
     property int refreshInterval: 15 // seconds
     property string accentStyle: "codex" // codex, violet, mint, rose, clean, custom
+    property int customAccentHue: 220 // 0-360
     property string customAccentBase: "#86a8ff"
     property int customAccentTemperature: 0 // -100 cool, 0 balanced, 100 warm
 }
