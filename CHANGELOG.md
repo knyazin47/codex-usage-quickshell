@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0
+
+- Added a `custom` palette mode driven by one base color plus a warm/cool temperature slider.
+- Kept the native Codex palette as a first-class preset for one-click reset.
+- Made the main left usage gauge follow the selected palette in normal usage states.
+- Removed the small Codex logo from the rail header and made the `Codex` title larger.
+- Made live limit discovery more reliable when Quickshell starts with a minimal `PATH`.
+- Added fallback error details to the limit source tooltip.
+
 ## 0.3.0
 
 - Added a live limit cache so short UI refresh intervals do not start the Codex app server on every tick.

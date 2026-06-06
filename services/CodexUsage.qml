@@ -41,6 +41,7 @@ Singleton {
     property var limits: []
     property string limitsSource: "local"
     property string limitsSyncedAt: ""
+    property string limitsError: ""
     property bool hasData: false
     readonly property bool enabled: Config.options.bar.codexUsage.enable
     readonly property bool refreshing: collector.running
@@ -98,6 +99,7 @@ Singleton {
         root.limits = data.limits ?? [];
         root.limitsSource = data.limitsSource ?? "local";
         root.limitsSyncedAt = data.limitsSyncedAt ?? "";
+        root.limitsError = data.limitsError ?? "";
     }
 
     onEnabledChanged: {

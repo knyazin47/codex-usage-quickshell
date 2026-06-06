@@ -13,7 +13,7 @@ The module is Codex-only. It does not read Claude projects or cloud billing page
 - Source badge for limit freshness: `live`, `cache`, `stale`, or `local`.
 - Activity bars for the last 18 hours.
 - Smooth loading skeletons and animated value changes instead of full visual resets on refresh.
-- Settings drawer with staged changes and Apply / Cancel.
+- Settings drawer with staged changes, palette presets, generated custom palette, and Apply / Cancel.
 - Live light/dark theme following `gsettings org.gnome.desktop.interface color-scheme`.
 - Collector pauses when the module is disabled in config.
 
@@ -22,7 +22,7 @@ The module is Codex-only. It does not read Claude projects or cloud billing page
 - Quickshell with a config using the `qs.modules.common`, `qs.services`, and `qs.modules.ii.bar` import layout.
 - Python 3.10+.
 - Codex Desktop or Codex CLI writing session files under `~/.codex/sessions`.
-- `codex` on `PATH` for live account limits. The collector falls back to local session metadata when unavailable.
+- `codex` on `PATH` or in a common user install path for live account limits. The collector falls back to cached or local session metadata when unavailable.
 - Optional: `gsettings` for live system light/dark detection.
 
 ## Install
@@ -67,7 +67,9 @@ property JsonObject codexUsage: JsonObject {
     property bool showTokenBreakdown: true
     property bool showDetailedLimits: true
     property int refreshInterval: 15 // seconds
-    property string accentStyle: "codex" // codex, violet, mint, rose, clean
+    property string accentStyle: "codex" // codex, violet, mint, rose, clean, custom
+    property string customAccentBase: "#86a8ff"
+    property int customAccentTemperature: 0 // -100 cool, 0 balanced, 100 warm
 }
 ```
 
@@ -115,7 +117,7 @@ Archived sessions are skipped by default to keep refreshes light. Include them e
 CODEX_USAGE_INCLUDE_ARCHIVED=1 ~/.config/quickshell/ii/scripts/codex-usage/codex_usage.py
 ```
 
-Large session histories can be expensive to scan frequently. The UI defaults to 15 seconds and clamps refresh values to at least 5 seconds. Live limit refresh has a short timeout and silently falls back to local session metadata if the Codex app server cannot respond.
+Large session histories can be expensive to scan frequently. The UI defaults to 15 seconds and clamps refresh values to at least 5 seconds. Live limit refresh has a short timeout and falls back to cached or local session metadata if the Codex app server cannot respond.
 
 Live limit cache timing can be tuned:
 

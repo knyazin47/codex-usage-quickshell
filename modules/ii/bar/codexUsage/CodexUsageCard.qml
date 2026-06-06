@@ -20,6 +20,8 @@ Item {
     property bool showSettings: false
     property string pendingLanguage: "auto"
     property string pendingAccentStyle: "codex"
+    property string pendingCustomAccentBase: "#86a8ff"
+    property int pendingCustomAccentTemperature: 0
     property bool pendingShowDetailedLimits: true
     property bool pendingShowActivity: true
     property bool pendingShowTokenBreakdown: true
@@ -45,6 +47,8 @@ Item {
 
     readonly property bool settingsDirty: pendingLanguage !== Config.options.bar.codexUsage.language
         || pendingAccentStyle !== Config.options.bar.codexUsage.accentStyle
+        || pendingCustomAccentBase !== customAccentBase()
+        || pendingCustomAccentTemperature !== customAccentTemperature()
         || pendingShowDetailedLimits !== Config.options.bar.codexUsage.showDetailedLimits
         || pendingShowActivity !== Config.options.bar.codexUsage.showActivity
         || pendingShowTokenBreakdown !== Config.options.bar.codexUsage.showTokenBreakdown
@@ -61,7 +65,138 @@ Item {
         return value && value.length >= 16 ? value.slice(11, 16) : "--:--";
     }
 
+    function normalizedHex(value, fallback) {
+        const text = String(value || "").trim();
+        const candidate = text.startsWith("#") ? text : `#${text}`;
+        return /^#[0-9a-fA-F]{6}$/.test(candidate) ? candidate : fallback;
+    }
+
+    function clampNumber(value, min, max, fallback) {
+        const number = Number(value);
+        if (isNaN(number))
+            return fallback;
+        return Math.max(min, Math.min(max, number));
+    }
+
+    function customAccentBase() {
+        return normalizedHex(Config.options.bar.codexUsage.customAccentBase, "#86a8ff");
+    }
+
+    function customAccentTemperature() {
+        return Math.round(clampNumber(Config.options.bar.codexUsage.customAccentTemperature, -100, 100, 0));
+    }
+
+    function hexToRgb(hex) {
+        const value = normalizedHex(hex, "#86a8ff").slice(1);
+        return {
+            "r": parseInt(value.slice(0, 2), 16) / 255,
+            "g": parseInt(value.slice(2, 4), 16) / 255,
+            "b": parseInt(value.slice(4, 6), 16) / 255
+        };
+    }
+
+    function componentToHex(value) {
+        const text = Math.round(clampNumber(value, 0, 1, 0) * 255).toString(16);
+        return text.length === 1 ? `0${text}` : text;
+    }
+
+    function rgbToHex(rgb) {
+        return `#${componentToHex(rgb.r)}${componentToHex(rgb.g)}${componentToHex(rgb.b)}`;
+    }
+
+    function rgbToHsl(rgb) {
+        const r = rgb.r;
+        const g = rgb.g;
+        const b = rgb.b;
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const lightness = (max + min) / 2;
+        let hue = 0;
+        let saturation = 0;
+
+        if (max !== min) {
+            const delta = max - min;
+            saturation = lightness > 0.5 ? delta / (2 - max - min) : delta / (max + min);
+            if (max === r)
+                hue = (g - b) / delta + (g < b ? 6 : 0);
+            else if (max === g)
+                hue = (b - r) / delta + 2;
+            else
+                hue = (r - g) / delta + 4;
+            hue /= 6;
+        }
+
+        return { "h": hue * 360, "s": saturation, "l": lightness };
+    }
+
+    function hueToRgb(p, q, t) {
+        let value = t;
+        if (value < 0)
+            value += 1;
+        if (value > 1)
+            value -= 1;
+        if (value < 1 / 6)
+            return p + (q - p) * 6 * value;
+        if (value < 1 / 2)
+            return q;
+        if (value < 2 / 3)
+            return p + (q - p) * (2 / 3 - value) * 6;
+        return p;
+    }
+
+    function hslToRgb(hsl) {
+        const h = ((hsl.h % 360) + 360) % 360 / 360;
+        const s = clampNumber(hsl.s, 0, 1, 0.7);
+        const l = clampNumber(hsl.l, 0, 1, 0.65);
+        if (s === 0)
+            return { "r": l, "g": l, "b": l };
+
+        const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+        const p = 2 * l - q;
+        return {
+            "r": hueToRgb(p, q, h + 1 / 3),
+            "g": hueToRgb(p, q, h),
+            "b": hueToRgb(p, q, h - 1 / 3)
+        };
+    }
+
+    function generatedAccent(baseHex, temperature, index) {
+        const hsl = rgbToHsl(hexToRgb(baseHex));
+        const temp = clampNumber(temperature, -100, 100, 0) / 100;
+        // Custom mode is intentionally constrained: one base color fans out
+        // into a small analogous palette so user edits stay polished.
+        if (index === 1) {
+            return rgbToHex(hslToRgb({
+                "h": hsl.h + 22 + temp * 22,
+                "s": clampNumber(hsl.s + 0.06, 0.42, 0.95, hsl.s),
+                "l": clampNumber(hsl.l - 0.02, 0.48, 0.72, hsl.l)
+            }));
+        }
+        if (index === 2) {
+            return rgbToHex(hslToRgb({
+                "h": hsl.h - 28 + temp * 12,
+                "s": clampNumber(hsl.s + 0.10, 0.45, 1, hsl.s),
+                "l": clampNumber(hsl.l + 0.02, 0.52, 0.76, hsl.l)
+            }));
+        }
+        return normalizedHex(baseHex, "#86a8ff");
+    }
+
+    function customAccentA() {
+        return generatedAccent(customAccentBase(), customAccentTemperature(), 0);
+    }
+
+    function customAccentB() {
+        return generatedAccent(customAccentBase(), customAccentTemperature(), 1);
+    }
+
+    function customAccentC() {
+        return generatedAccent(customAccentBase(), customAccentTemperature(), 2);
+    }
+
     function accentColorA(style) {
+        if (style === "custom")
+            return customAccentA();
         if (style === "clean")
             return "#dfe5ff";
         if (style === "violet")
@@ -74,6 +209,8 @@ Item {
     }
 
     function accentColorB(style) {
+        if (style === "custom")
+            return customAccentB();
         if (style === "clean")
             return "#aebaff";
         if (style === "violet")
@@ -86,6 +223,8 @@ Item {
     }
 
     function accentColorC(style) {
+        if (style === "custom")
+            return customAccentC();
         if (style === "clean")
             return "#7aa2ff";
         if (style === "violet")
@@ -95,6 +234,18 @@ Item {
         if (style === "rose")
             return "#66d9ff";
         return "#65d7ff";
+    }
+
+    function previewAccentColorA(style) {
+        return style === "custom" ? generatedAccent(pendingCustomAccentBase, pendingCustomAccentTemperature, 0) : accentColorA(style);
+    }
+
+    function previewAccentColorB(style) {
+        return style === "custom" ? generatedAccent(pendingCustomAccentBase, pendingCustomAccentTemperature, 1) : accentColorB(style);
+    }
+
+    function previewAccentColorC(style) {
+        return style === "custom" ? generatedAccent(pendingCustomAccentBase, pendingCustomAccentTemperature, 2) : accentColorC(style);
     }
 
     function sourceLabel(source) {
@@ -153,6 +304,14 @@ Item {
         return `${rowData.remainingPercent}% ${t("left", "ост.")} · ${rowData.reset}`;
     }
 
+    function limitAccentColor() {
+        if (CodexUsage.primaryRemainingPercent <= 10 || CodexUsage.secondaryRemainingPercent <= 10)
+            return Appearance.colors.colError;
+        if (CodexUsage.primaryRemainingPercent <= 35 || CodexUsage.secondaryRemainingPercent <= 35)
+            return "#f0c36a";
+        return root.accentB;
+    }
+
     function updatedText() {
         if (errorState && CodexUsage.hasData)
             return t("collector error · showing last data", "ошибка чтения · показаны прошлые данные");
@@ -202,6 +361,8 @@ Item {
     function syncPendingSettings() {
         pendingLanguage = Config.options.bar.codexUsage.language;
         pendingAccentStyle = Config.options.bar.codexUsage.accentStyle;
+        pendingCustomAccentBase = customAccentBase();
+        pendingCustomAccentTemperature = customAccentTemperature();
         pendingShowDetailedLimits = Config.options.bar.codexUsage.showDetailedLimits;
         pendingShowActivity = Config.options.bar.codexUsage.showActivity;
         pendingShowTokenBreakdown = Config.options.bar.codexUsage.showTokenBreakdown;
@@ -211,6 +372,8 @@ Item {
     function applyPendingSettings() {
         Config.options.bar.codexUsage.language = pendingLanguage;
         Config.options.bar.codexUsage.accentStyle = pendingAccentStyle;
+        Config.options.bar.codexUsage.customAccentBase = normalizedHex(pendingCustomAccentBase, "#86a8ff");
+        Config.options.bar.codexUsage.customAccentTemperature = Math.round(clampNumber(pendingCustomAccentTemperature, -100, 100, 0));
         Config.options.bar.codexUsage.showDetailedLimits = pendingShowDetailedLimits;
         Config.options.bar.codexUsage.showActivity = pendingShowActivity;
         Config.options.bar.codexUsage.showTokenBreakdown = pendingShowTokenBreakdown;
@@ -305,25 +468,14 @@ Item {
 
                     Item {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 22
-
-                        CustomIcon {
-                            anchors {
-                                left: parent.left
-                                verticalCenter: parent.verticalCenter
-                            }
-                            width: 20
-                            height: 20
-                            source: "codex-cloud.svg"
-                            colorize: false
-                        }
+                        Layout.preferredHeight: 26
 
                         StyledText {
                             anchors.centerIn: parent
                             text: "Codex"
                             horizontalAlignment: Text.AlignHCenter
-                            font.pixelSize: Appearance.font.pixelSize.smaller
-                            font.weight: Font.DemiBold
+                            font.pixelSize: Appearance.font.pixelSize.normal
+                            font.weight: Font.Bold
                             color: root.textPrimary
                             elide: Text.ElideRight
                         }
@@ -340,7 +492,7 @@ Item {
                             gaugeSize: 96
                             lineWidth: 7
                             value: root.loading ? 0.66 : CodexUsage.primaryRemaining
-                            accent: CodexUsage.statusColor
+                            accent: root.loading ? root.accentB : root.limitAccentColor()
                             indeterminate: root.loading
                         }
 
@@ -783,6 +935,48 @@ Item {
                     PaletteChip { label: "mint"; styleName: "mint"; active: root.pendingAccentStyle === "mint"; onClicked: root.pendingAccentStyle = "mint" }
                     PaletteChip { label: "rose"; styleName: "rose"; active: root.pendingAccentStyle === "rose"; onClicked: root.pendingAccentStyle = "rose" }
                     PaletteChip { label: "clean"; styleName: "clean"; active: root.pendingAccentStyle === "clean"; onClicked: root.pendingAccentStyle = "clean" }
+                    PaletteChip { label: "custom"; styleName: "custom"; active: root.pendingAccentStyle === "custom"; onClicked: root.pendingAccentStyle = "custom" }
+                }
+            }
+
+            SettingsSection {
+                visible: root.pendingAccentStyle === "custom"
+                title: root.t("custom", "свой цвет")
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 7
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: 28
+                        radius: 999
+                        border.width: 1
+                        border.color: root.outlineColor
+                        gradient: Gradient {
+                            GradientStop { position: 0.0; color: root.previewAccentColorA("custom") }
+                            GradientStop { position: 0.55; color: root.previewAccentColorB("custom") }
+                            GradientStop { position: 1.0; color: root.previewAccentColorC("custom") }
+                        }
+                    }
+
+                    Flow {
+                        Layout.fillWidth: true
+                        spacing: 7
+
+                        BaseColorChip { colorValue: "#86a8ff"; active: root.pendingCustomAccentBase === colorValue; onClicked: root.pendingCustomAccentBase = colorValue }
+                        BaseColorChip { colorValue: "#9f91ff"; active: root.pendingCustomAccentBase === colorValue; onClicked: root.pendingCustomAccentBase = colorValue }
+                        BaseColorChip { colorValue: "#62dcb4"; active: root.pendingCustomAccentBase === colorValue; onClicked: root.pendingCustomAccentBase = colorValue }
+                        BaseColorChip { colorValue: "#ff8fb3"; active: root.pendingCustomAccentBase === colorValue; onClicked: root.pendingCustomAccentBase = colorValue }
+                        BaseColorChip { colorValue: "#f0c36a"; active: root.pendingCustomAccentBase === colorValue; onClicked: root.pendingCustomAccentBase = colorValue }
+                        BaseColorChip { colorValue: "#65d7ff"; active: root.pendingCustomAccentBase === colorValue; onClicked: root.pendingCustomAccentBase = colorValue }
+                    }
+
+                    TemperatureSlider {
+                        Layout.fillWidth: true
+                        value: root.pendingCustomAccentTemperature
+                        onMoved: newValue => root.pendingCustomAccentTemperature = newValue
+                    }
                 }
             }
 
@@ -1440,6 +1634,7 @@ Item {
 
         readonly property color badgeColor: root.sourceColor(CodexUsage.limitsSource)
 
+        Layout.alignment: Qt.AlignVCenter
         Layout.preferredWidth: badgeRow.implicitWidth + 14
         Layout.preferredHeight: 20
         hoverEnabled: true
@@ -1484,7 +1679,9 @@ Item {
 
         StyledToolTip {
             extraVisibleCondition: badge.containsMouse
-            text: root.sourceTooltip()
+            text: CodexUsage.limitsError.length > 0
+                ? `${root.sourceTooltip()} · ${CodexUsage.limitsError}`
+                : root.sourceTooltip()
         }
     }
 
@@ -1494,9 +1691,9 @@ Item {
         required property string label
         required property string styleName
         property bool active: false
-        readonly property color swatchA: root.accentColorA(styleName)
-        readonly property color swatchB: root.accentColorB(styleName)
-        readonly property color swatchC: root.accentColorC(styleName)
+        readonly property color swatchA: root.previewAccentColorA(styleName)
+        readonly property color swatchB: root.previewAccentColorB(styleName)
+        readonly property color swatchC: root.previewAccentColorC(styleName)
 
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
@@ -1557,6 +1754,114 @@ Item {
                 font.weight: palette.active ? Font.DemiBold : Font.Normal
                 color: palette.active ? root.textPrimary : root.textSecondary
                 elide: Text.ElideRight
+            }
+        }
+    }
+
+    component BaseColorChip: MouseArea {
+        id: baseChip
+
+        required property string colorValue
+        property bool active: false
+
+        implicitWidth: 25
+        implicitHeight: 25
+        hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
+
+        Rectangle {
+            anchors.fill: parent
+            radius: 999
+            color: baseChip.colorValue
+            border.width: baseChip.active ? 2 : 1
+            border.color: baseChip.active ? root.textPrimary : Qt.rgba(1, 1, 1, root.darkTheme ? 0.22 : 0.82)
+            scale: baseChip.containsMouse ? 1.06 : 1
+
+            Behavior on scale {
+                NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
+            }
+        }
+    }
+
+    component TemperatureSlider: MouseArea {
+        id: slider
+
+        property int value: 0
+
+        signal moved(int newValue)
+
+        implicitHeight: 38
+        hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
+
+        function updateFromX(xValue) {
+            const ratio = Math.max(0, Math.min(1, xValue / Math.max(1, width)));
+            slider.moved(Math.round((ratio * 200 - 100) / 5) * 5);
+        }
+
+        onPressed: event => slider.updateFromX(event.x)
+        onPositionChanged: event => {
+            if (pressed)
+                slider.updateFromX(event.x);
+        }
+
+        RowLayout {
+            anchors {
+                left: parent.left
+                right: parent.right
+                top: parent.top
+            }
+            height: 14
+
+            StyledText {
+                text: root.t("cool", "холоднее")
+                font.pixelSize: Appearance.font.pixelSize.smallest
+                color: root.textSecondary
+            }
+
+            Item {
+                Layout.fillWidth: true
+            }
+
+            StyledText {
+                text: root.t("warm", "теплее")
+                font.pixelSize: Appearance.font.pixelSize.smallest
+                color: root.textSecondary
+            }
+        }
+
+        Rectangle {
+            id: tempTrack
+            anchors {
+                left: parent.left
+                right: parent.right
+                bottom: parent.bottom
+                bottomMargin: 7
+            }
+            height: 8
+            radius: 999
+            border.width: 1
+            border.color: root.outlineColor
+            gradient: Gradient {
+                orientation: Gradient.Horizontal
+                GradientStop { position: 0.0; color: root.previewAccentColorC("custom") }
+                GradientStop { position: 0.5; color: root.previewAccentColorA("custom") }
+                GradientStop { position: 1.0; color: root.previewAccentColorB("custom") }
+            }
+        }
+
+        Rectangle {
+            width: 18
+            height: 18
+            radius: 999
+            x: Math.max(0, Math.min(parent.width - width, ((slider.value + 100) / 200) * parent.width - width / 2))
+            y: tempTrack.y + tempTrack.height / 2 - height / 2
+            color: root.tileColor
+            border.width: 2
+            border.color: root.previewAccentColorB("custom")
+
+            Behavior on x {
+                NumberAnimation { duration: 90; easing.type: Easing.OutCubic }
             }
         }
     }

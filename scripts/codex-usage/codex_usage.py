@@ -56,6 +56,7 @@ class RateLimitResult:
     snapshots: list[dict[str, Any]]
     source: str
     synced_at: dt.datetime | None
+    error: str = ""
 
 
 def parse_timestamp(value: str | None) -> dt.datetime | None:
@@ -126,6 +127,49 @@ def live_cache_seconds() -> int:
 
 def live_stale_seconds() -> int:
     return env_int("CODEX_USAGE_LIVE_STALE_SECONDS", LIVE_LIMITS_STALE_SECONDS_DEFAULT, 0, 86400)
+
+
+def add_rate_limit_error(result: RateLimitResult, error: str) -> RateLimitResult:
+    result.error = error
+    return result
+
+
+def codex_search_path() -> list[pathlib.Path]:
+    return [
+        HOME / ".local" / "bin" / "codex",
+        HOME / ".cargo" / "bin" / "codex",
+        HOME / ".bun" / "bin" / "codex",
+        HOME / ".npm-global" / "bin" / "codex",
+        pathlib.Path("/usr/local/bin/codex"),
+        pathlib.Path("/usr/bin/codex"),
+    ]
+
+
+def find_codex_binary() -> str | None:
+    configured = os.environ.get("CODEX_USAGE_CODEX_PATH")
+    if configured:
+        path = pathlib.Path(configured).expanduser()
+        if path.is_file() and os.access(path, os.X_OK):
+            return str(path)
+
+    found = shutil.which("codex")
+    if found:
+        return found
+
+    # Quickshell can be launched by the desktop session with a minimal PATH.
+    # Check the usual user install locations explicitly so live limits still
+    # work after reboot even when an interactive shell would find `codex`.
+    for path in codex_search_path():
+        if path.is_file() and os.access(path, os.X_OK):
+            return str(path)
+    return None
+
+
+def codex_subprocess_env() -> dict[str, str]:
+    env = os.environ.copy()
+    extra_paths = [str(path.parent) for path in codex_search_path()]
+    env["PATH"] = os.pathsep.join(extra_paths + [env.get("PATH", "")])
+    return env
 
 
 def read_live_limits_cache(now: dt.datetime, max_age_seconds: int) -> RateLimitResult:
@@ -210,9 +254,12 @@ def fetch_live_rate_limits(timeout_seconds: float = LIVE_LIMITS_TIMEOUT_SECONDS)
     if cached.snapshots:
         return cached
 
-    codex = shutil.which("codex")
+    codex = find_codex_binary()
     if not codex:
-        return read_live_limits_cache(now, live_stale_seconds())
+        return add_rate_limit_error(
+            read_live_limits_cache(now, live_stale_seconds()),
+            "codex binary not found",
+        )
 
     proc: subprocess.Popen[str] | None = None
     selector: selectors.BaseSelector | None = None
@@ -223,6 +270,7 @@ def fetch_live_rate_limits(timeout_seconds: float = LIVE_LIMITS_TIMEOUT_SECONDS)
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             text=True,
+            env=codex_subprocess_env(),
         )
         if proc.stdin is None or proc.stdout is None:
             return read_live_limits_cache(now, live_stale_seconds())
@@ -268,8 +316,8 @@ def fetch_live_rate_limits(timeout_seconds: float = LIVE_LIMITS_TIMEOUT_SECONDS)
             synced_at = dt.datetime.now().astimezone()
             write_live_limits_cache(normalized, synced_at)
             return RateLimitResult(normalized, "live", synced_at)
-    except (OSError, subprocess.SubprocessError):
-        return read_live_limits_cache(now, live_stale_seconds())
+    except (OSError, subprocess.SubprocessError) as exc:
+        return add_rate_limit_error(read_live_limits_cache(now, live_stale_seconds()), str(exc))
     finally:
         if selector is not None:
             selector.close()
@@ -279,7 +327,10 @@ def fetch_live_rate_limits(timeout_seconds: float = LIVE_LIMITS_TIMEOUT_SECONDS)
                 proc.wait(timeout=0.5)
             except subprocess.TimeoutExpired:
                 proc.kill()
-    return read_live_limits_cache(now, live_stale_seconds())
+    return add_rate_limit_error(
+        read_live_limits_cache(now, live_stale_seconds()),
+        "codex app-server returned no live limits",
+    )
 
 
 def format_reset(epoch: int | None, now: dt.datetime) -> str:
@@ -602,6 +653,7 @@ def build_summary(days_back: int = 8) -> dict[str, Any]:
         "activityDetails": activity_details(hourly, 18),
         "limitsSource": live_rate_limits.source,
         "limitsSyncedAt": live_rate_limits.synced_at.isoformat(timespec="minutes") if live_rate_limits.synced_at else "",
+        "limitsError": live_rate_limits.error,
         "limits": limits,
     }
 
