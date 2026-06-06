@@ -32,7 +32,7 @@ INCLUDE_WORKSPACE = os.environ.get("CODEX_USAGE_INCLUDE_WORKSPACE") == "1"
 INCLUDE_ARCHIVED = os.environ.get("CODEX_USAGE_INCLUDE_ARCHIVED") == "1"
 LIVE_LIMITS_ENABLED = os.environ.get("CODEX_USAGE_LIVE_LIMITS", "1") != "0"
 LIVE_LIMITS_TIMEOUT_SECONDS = 3.0
-LIVE_LIMITS_CACHE_SECONDS_DEFAULT = 45
+LIVE_LIMITS_CACHE_SECONDS_DEFAULT = 5
 LIVE_LIMITS_STALE_SECONDS_DEFAULT = 600
 XDG_CACHE_HOME = pathlib.Path(os.environ.get("XDG_CACHE_HOME") or HOME / ".cache")
 LIVE_LIMITS_CACHE_PATH = XDG_CACHE_HOME / "codex-usage-quickshell" / "rate_limits.json"
@@ -184,12 +184,15 @@ def read_live_limits_cache(now: dt.datetime, max_age_seconds: int) -> RateLimitR
     snapshots = cache.get("rateLimits") or []
     if synced_at is None or not isinstance(snapshots, list):
         return RateLimitResult([], "local", None)
+    snapshots = [snapshot for snapshot in snapshots if isinstance(snapshot, dict)]
+    if not snapshots:
+        return RateLimitResult([], "local", synced_at)
 
     age_seconds = max(0, int((now - synced_at).total_seconds()))
     if age_seconds <= max_age_seconds:
         source = "cache" if age_seconds <= live_cache_seconds() else "stale"
         return RateLimitResult(
-            [snapshot for snapshot in snapshots if isinstance(snapshot, dict)],
+            snapshots,
             source,
             synced_at,
         )
@@ -242,7 +245,10 @@ def normalize_live_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def fetch_live_rate_limits(timeout_seconds: float = LIVE_LIMITS_TIMEOUT_SECONDS) -> RateLimitResult:
+def fetch_live_rate_limits(
+    timeout_seconds: float = LIVE_LIMITS_TIMEOUT_SECONDS,
+    force_refresh: bool = False,
+) -> RateLimitResult:
     """Read the same live account rate-limit snapshot that Codex Desktop uses."""
     now = dt.datetime.now().astimezone()
     if not LIVE_LIMITS_ENABLED:
@@ -250,9 +256,10 @@ def fetch_live_rate_limits(timeout_seconds: float = LIVE_LIMITS_TIMEOUT_SECONDS)
 
     # The panel may refresh every five seconds; the account snapshot does not
     # need to start a Codex app-server process every time.
-    cached = read_live_limits_cache(now, live_cache_seconds())
-    if cached.snapshots:
-        return cached
+    if not force_refresh:
+        cached = read_live_limits_cache(now, live_cache_seconds())
+        if cached.snapshots:
+            return cached
 
     codex = find_codex_binary()
     if not codex:
@@ -313,6 +320,11 @@ def fetch_live_rate_limits(timeout_seconds: float = LIVE_LIMITS_TIMEOUT_SECONDS)
             # one historical snapshot, so support both shapes.
             snapshots = list(by_id.values()) if by_id else [result.get("rateLimits")]
             normalized = [normalize_live_snapshot(snapshot) for snapshot in snapshots if isinstance(snapshot, dict)]
+            if not normalized:
+                return add_rate_limit_error(
+                    read_live_limits_cache(now, live_stale_seconds()),
+                    "codex app-server returned empty live limits",
+                )
             synced_at = dt.datetime.now().astimezone()
             write_live_limits_cache(normalized, synced_at)
             return RateLimitResult(normalized, "live", synced_at)
@@ -577,7 +589,7 @@ def activity_details(values: list[int], length: int = 18) -> list[dict[str, Any]
     return details
 
 
-def build_summary(days_back: int = 8) -> dict[str, Any]:
+def build_summary(days_back: int = 8, force_live_limits: bool = False) -> dict[str, Any]:
     now = dt.datetime.now().astimezone()
     today = now.date()
     week_start = today - dt.timedelta(days=6)
@@ -586,7 +598,7 @@ def build_summary(days_back: int = 8) -> dict[str, Any]:
     today_events = [event for event in events if event.timestamp.date() == today]
     week_events = [event for event in events if event.timestamp.date() >= week_start]
     latest = events[-1] if events else None
-    live_rate_limits = fetch_live_rate_limits()
+    live_rate_limits = fetch_live_rate_limits(force_refresh=force_live_limits)
     limits = build_limits(events, now, live_rate_limits.snapshots)
     main_limit = limits[0] if limits else {"rows": []}
     main_rows = main_limit.get("rows") or []
@@ -661,7 +673,8 @@ def build_summary(days_back: int = 8) -> dict[str, Any]:
 def main() -> int:
     try:
         days_back = env_int("CODEX_USAGE_DAYS", DEFAULT_DAYS_BACK, 1, MAX_DAYS_BACK)
-        print(json.dumps(build_summary(days_back), ensure_ascii=False, separators=(",", ":")))
+        force_live_limits = "--force-live" in sys.argv[1:] or os.environ.get("CODEX_USAGE_FORCE_LIVE_LIMITS") == "1"
+        print(json.dumps(build_summary(days_back, force_live_limits), ensure_ascii=False, separators=(",", ":")))
         return 0
     except Exception as exc:  # Keep Quickshell alive even if one scan fails.
         print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))

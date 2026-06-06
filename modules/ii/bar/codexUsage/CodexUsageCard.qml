@@ -738,7 +738,7 @@ Item {
                     RoundIconButton {
                         symbol: "refresh"
                         active: CodexUsage.refreshing
-                        onTriggered: CodexUsage.refresh()
+                        onTriggered: CodexUsage.refresh(true)
                     }
 
                     RoundIconButton {

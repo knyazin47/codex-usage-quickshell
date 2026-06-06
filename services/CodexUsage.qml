@@ -43,6 +43,8 @@ Singleton {
     property string limitsSyncedAt: ""
     property string limitsError: ""
     property bool hasData: false
+    property bool forceLiveRefresh: false
+    property bool pendingForceRefresh: false
     readonly property bool enabled: Config.options.bar.codexUsage.enable
     readonly property bool refreshing: collector.running
 
@@ -55,11 +57,15 @@ Singleton {
     readonly property color coolAccentColor: "#7aa2ff"
     readonly property color warmAccentColor: "#aa83ff"
 
-    function refresh(): void {
+    function refresh(forceLive): void {
         if (!root.enabled)
             return;
-        if (collector.running)
+        if (collector.running) {
+            if (forceLive)
+                root.pendingForceRefresh = true;
             return;
+        }
+        root.forceLiveRefresh = Boolean(forceLive);
         collector.running = true;
     }
 
@@ -123,7 +129,15 @@ Singleton {
 
     Process {
         id: collector
-        command: ["python3", root.scriptPath]
+        command: root.forceLiveRefresh ? ["python3", root.scriptPath, "--force-live"] : ["python3", root.scriptPath]
+
+        onExited: (exitCode, exitStatus) => {
+            const shouldForce = root.pendingForceRefresh;
+            root.forceLiveRefresh = false;
+            root.pendingForceRefresh = false;
+            if (shouldForce)
+                root.refresh(true);
+        }
 
         stdout: StdioCollector {
             onStreamFinished: {
