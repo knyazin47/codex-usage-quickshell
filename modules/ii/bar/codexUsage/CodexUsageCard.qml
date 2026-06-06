@@ -46,9 +46,6 @@ Item {
     readonly property color outlineColor: darkTheme ? Qt.rgba(1, 1, 1, 0.11) : Qt.rgba(0.12, 0.10, 0.18, 0.12)
 
     readonly property bool settingsDirty: pendingLanguage !== Config.options.bar.codexUsage.language
-        || pendingAccentStyle !== Config.options.bar.codexUsage.accentStyle
-        || pendingCustomAccentBase !== customAccentBase()
-        || pendingCustomAccentTemperature !== customAccentTemperature()
         || pendingShowDetailedLimits !== Config.options.bar.codexUsage.showDetailedLimits
         || pendingShowActivity !== Config.options.bar.codexUsage.showActivity
         || pendingShowTokenBreakdown !== Config.options.bar.codexUsage.showTokenBreakdown
@@ -371,13 +368,27 @@ Item {
 
     function applyPendingSettings() {
         Config.options.bar.codexUsage.language = pendingLanguage;
-        Config.options.bar.codexUsage.accentStyle = pendingAccentStyle;
-        Config.options.bar.codexUsage.customAccentBase = normalizedHex(pendingCustomAccentBase, "#86a8ff");
-        Config.options.bar.codexUsage.customAccentTemperature = Math.round(clampNumber(pendingCustomAccentTemperature, -100, 100, 0));
         Config.options.bar.codexUsage.showDetailedLimits = pendingShowDetailedLimits;
         Config.options.bar.codexUsage.showActivity = pendingShowActivity;
         Config.options.bar.codexUsage.showTokenBreakdown = pendingShowTokenBreakdown;
         Config.options.bar.codexUsage.refreshInterval = pendingRefreshInterval;
+    }
+
+    function applyAccentStyle(style) {
+        pendingAccentStyle = style;
+        Config.options.bar.codexUsage.accentStyle = style;
+    }
+
+    function applyCustomAccentBase(value) {
+        const accent = normalizedHex(value, "#86a8ff");
+        pendingCustomAccentBase = accent;
+        Config.options.bar.codexUsage.customAccentBase = accent;
+    }
+
+    function applyCustomAccentTemperature(value) {
+        const temperature = Math.round(clampNumber(value, -100, 100, 0));
+        pendingCustomAccentTemperature = temperature;
+        Config.options.bar.codexUsage.customAccentTemperature = temperature;
     }
 
     Component.onCompleted: {
@@ -914,108 +925,122 @@ Item {
                 }
             }
 
-            SettingsSection {
-                title: root.t("language", "язык")
-                Flow {
-                    Layout.fillWidth: true
-                    spacing: 7
-                    OptionChip { label: "auto"; active: root.pendingLanguage === "auto"; onClicked: root.pendingLanguage = "auto" }
-                    OptionChip { label: "ru"; active: root.pendingLanguage === "ru"; onClicked: root.pendingLanguage = "ru" }
-                    OptionChip { label: "en"; active: root.pendingLanguage === "en"; onClicked: root.pendingLanguage = "en" }
-                }
-            }
+            Flickable {
+                id: settingsScroll
 
-            SettingsSection {
-                title: root.t("palette", "палитра")
-                Flow {
-                    Layout.fillWidth: true
-                    spacing: 6
-                    PaletteChip { label: "codex"; styleName: "codex"; active: root.pendingAccentStyle === "codex"; onClicked: root.pendingAccentStyle = "codex" }
-                    PaletteChip { label: "violet"; styleName: "violet"; active: root.pendingAccentStyle === "violet"; onClicked: root.pendingAccentStyle = "violet" }
-                    PaletteChip { label: "mint"; styleName: "mint"; active: root.pendingAccentStyle === "mint"; onClicked: root.pendingAccentStyle = "mint" }
-                    PaletteChip { label: "rose"; styleName: "rose"; active: root.pendingAccentStyle === "rose"; onClicked: root.pendingAccentStyle = "rose" }
-                    PaletteChip { label: "clean"; styleName: "clean"; active: root.pendingAccentStyle === "clean"; onClicked: root.pendingAccentStyle = "clean" }
-                    PaletteChip { label: "custom"; styleName: "custom"; active: root.pendingAccentStyle === "custom"; onClicked: root.pendingAccentStyle = "custom" }
-                }
-            }
-
-            SettingsSection {
-                visible: root.pendingAccentStyle === "custom"
-                title: root.t("custom", "свой цвет")
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                contentWidth: width
+                contentHeight: settingsContent.implicitHeight
+                boundsBehavior: Flickable.StopAtBounds
 
                 ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 7
+                    id: settingsContent
 
-                    Rectangle {
-                        Layout.fillWidth: true
-                        implicitHeight: 28
-                        radius: 999
-                        border.width: 1
-                        border.color: root.outlineColor
-                        gradient: Gradient {
-                            GradientStop { position: 0.0; color: root.previewAccentColorA("custom") }
-                            GradientStop { position: 0.55; color: root.previewAccentColorB("custom") }
-                            GradientStop { position: 1.0; color: root.previewAccentColorC("custom") }
+                    width: settingsScroll.width
+                    spacing: 9
+
+                    SettingsSection {
+                        title: root.t("language", "язык")
+                        Flow {
+                            Layout.fillWidth: true
+                            spacing: 7
+                            OptionChip { label: "auto"; active: root.pendingLanguage === "auto"; onClicked: root.pendingLanguage = "auto" }
+                            OptionChip { label: "ru"; active: root.pendingLanguage === "ru"; onClicked: root.pendingLanguage = "ru" }
+                            OptionChip { label: "en"; active: root.pendingLanguage === "en"; onClicked: root.pendingLanguage = "en" }
                         }
                     }
 
-                    Flow {
-                        Layout.fillWidth: true
-                        spacing: 7
-
-                        BaseColorChip { colorValue: "#86a8ff"; active: root.pendingCustomAccentBase === colorValue; onClicked: root.pendingCustomAccentBase = colorValue }
-                        BaseColorChip { colorValue: "#9f91ff"; active: root.pendingCustomAccentBase === colorValue; onClicked: root.pendingCustomAccentBase = colorValue }
-                        BaseColorChip { colorValue: "#62dcb4"; active: root.pendingCustomAccentBase === colorValue; onClicked: root.pendingCustomAccentBase = colorValue }
-                        BaseColorChip { colorValue: "#ff8fb3"; active: root.pendingCustomAccentBase === colorValue; onClicked: root.pendingCustomAccentBase = colorValue }
-                        BaseColorChip { colorValue: "#f0c36a"; active: root.pendingCustomAccentBase === colorValue; onClicked: root.pendingCustomAccentBase = colorValue }
-                        BaseColorChip { colorValue: "#65d7ff"; active: root.pendingCustomAccentBase === colorValue; onClicked: root.pendingCustomAccentBase = colorValue }
+                    SettingsSection {
+                        title: root.t("palette", "палитра")
+                        Flow {
+                            Layout.fillWidth: true
+                            spacing: 6
+                            PaletteChip { label: "codex"; styleName: "codex"; active: root.pendingAccentStyle === "codex"; onClicked: root.applyAccentStyle("codex") }
+                            PaletteChip { label: "violet"; styleName: "violet"; active: root.pendingAccentStyle === "violet"; onClicked: root.applyAccentStyle("violet") }
+                            PaletteChip { label: "mint"; styleName: "mint"; active: root.pendingAccentStyle === "mint"; onClicked: root.applyAccentStyle("mint") }
+                            PaletteChip { label: "rose"; styleName: "rose"; active: root.pendingAccentStyle === "rose"; onClicked: root.applyAccentStyle("rose") }
+                            PaletteChip { label: "clean"; styleName: "clean"; active: root.pendingAccentStyle === "clean"; onClicked: root.applyAccentStyle("clean") }
+                            PaletteChip { label: "custom"; styleName: "custom"; active: root.pendingAccentStyle === "custom"; onClicked: root.applyAccentStyle("custom") }
+                        }
                     }
 
-                    TemperatureSlider {
-                        Layout.fillWidth: true
-                        value: root.pendingCustomAccentTemperature
-                        onMoved: newValue => root.pendingCustomAccentTemperature = newValue
+                    SettingsSection {
+                        visible: root.pendingAccentStyle === "custom"
+                        title: root.t("custom", "свой цвет")
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 7
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                implicitHeight: 28
+                                radius: 999
+                                border.width: 1
+                                border.color: root.outlineColor
+                                gradient: Gradient {
+                                    GradientStop { position: 0.0; color: root.previewAccentColorA("custom") }
+                                    GradientStop { position: 0.55; color: root.previewAccentColorB("custom") }
+                                    GradientStop { position: 1.0; color: root.previewAccentColorC("custom") }
+                                }
+                            }
+
+                            Flow {
+                                Layout.fillWidth: true
+                                spacing: 7
+
+                                BaseColorChip { colorValue: "#86a8ff"; active: root.pendingCustomAccentBase === colorValue; onClicked: root.applyCustomAccentBase(colorValue) }
+                                BaseColorChip { colorValue: "#9f91ff"; active: root.pendingCustomAccentBase === colorValue; onClicked: root.applyCustomAccentBase(colorValue) }
+                                BaseColorChip { colorValue: "#62dcb4"; active: root.pendingCustomAccentBase === colorValue; onClicked: root.applyCustomAccentBase(colorValue) }
+                                BaseColorChip { colorValue: "#ff8fb3"; active: root.pendingCustomAccentBase === colorValue; onClicked: root.applyCustomAccentBase(colorValue) }
+                                BaseColorChip { colorValue: "#f0c36a"; active: root.pendingCustomAccentBase === colorValue; onClicked: root.applyCustomAccentBase(colorValue) }
+                                BaseColorChip { colorValue: "#65d7ff"; active: root.pendingCustomAccentBase === colorValue; onClicked: root.applyCustomAccentBase(colorValue) }
+                            }
+
+                            TemperatureSlider {
+                                Layout.fillWidth: true
+                                value: root.pendingCustomAccentTemperature
+                                onMoved: newValue => root.applyCustomAccentTemperature(newValue)
+                            }
+                        }
+                    }
+
+                    SettingsSection {
+                        title: root.t("show", "показывать")
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 7
+                            ToggleRow {
+                                label: root.t("limits", "лимиты")
+                                checked: root.pendingShowDetailedLimits
+                                onClicked: root.pendingShowDetailedLimits = !root.pendingShowDetailedLimits
+                            }
+                            ToggleRow {
+                                label: root.t("activity", "активность")
+                                checked: root.pendingShowActivity
+                                onClicked: root.pendingShowActivity = !root.pendingShowActivity
+                            }
+                            ToggleRow {
+                                label: root.t("tokens", "токены")
+                                checked: root.pendingShowTokenBreakdown
+                                onClicked: root.pendingShowTokenBreakdown = !root.pendingShowTokenBreakdown
+                            }
+                        }
+                    }
+
+                    SettingsSection {
+                        title: root.t("refresh", "обновление")
+                        Flow {
+                            Layout.fillWidth: true
+                            spacing: 6
+                            OptionChip { label: "5s"; active: root.pendingRefreshInterval === 5; onClicked: root.pendingRefreshInterval = 5 }
+                            OptionChip { label: "15s"; active: root.pendingRefreshInterval === 15; onClicked: root.pendingRefreshInterval = 15 }
+                            OptionChip { label: "30s"; active: root.pendingRefreshInterval === 30; onClicked: root.pendingRefreshInterval = 30 }
+                        }
                     }
                 }
-            }
-
-            SettingsSection {
-                title: root.t("show", "показывать")
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 7
-                    ToggleRow {
-                        label: root.t("limits", "лимиты")
-                        checked: root.pendingShowDetailedLimits
-                        onClicked: root.pendingShowDetailedLimits = !root.pendingShowDetailedLimits
-                    }
-                    ToggleRow {
-                        label: root.t("activity", "активность")
-                        checked: root.pendingShowActivity
-                        onClicked: root.pendingShowActivity = !root.pendingShowActivity
-                    }
-                    ToggleRow {
-                        label: root.t("tokens", "токены")
-                        checked: root.pendingShowTokenBreakdown
-                        onClicked: root.pendingShowTokenBreakdown = !root.pendingShowTokenBreakdown
-                    }
-                }
-            }
-
-            SettingsSection {
-                title: root.t("refresh", "обновление")
-                Flow {
-                    Layout.fillWidth: true
-                    spacing: 6
-                    OptionChip { label: "5s"; active: root.pendingRefreshInterval === 5; onClicked: root.pendingRefreshInterval = 5 }
-                    OptionChip { label: "15s"; active: root.pendingRefreshInterval === 15; onClicked: root.pendingRefreshInterval = 15 }
-                    OptionChip { label: "30s"; active: root.pendingRefreshInterval === 30; onClicked: root.pendingRefreshInterval = 30 }
-                }
-            }
-
-            Item {
-                Layout.fillHeight: true
             }
 
             RowLayout {

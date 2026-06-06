@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1
+
+- Made palette selection, base color, and warm/cool temperature apply immediately while editing.
+- Kept Apply / Cancel for non-palette settings only.
+- Put the settings body in a scrollable area so custom palette controls no longer push Apply off-screen.
+
 ## 0.4.0
 
 - Added a `custom` palette mode driven by one base color plus a warm/cool temperature slider.
