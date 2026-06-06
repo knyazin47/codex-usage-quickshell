@@ -11,7 +11,11 @@ import datetime as dt
 import json
 import os
 import pathlib
+import selectors
+import shutil
+import subprocess
 import sys
+import time
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
@@ -26,6 +30,8 @@ DEFAULT_DAYS_BACK = 8
 MAX_DAYS_BACK = 30
 INCLUDE_WORKSPACE = os.environ.get("CODEX_USAGE_INCLUDE_WORKSPACE") == "1"
 INCLUDE_ARCHIVED = os.environ.get("CODEX_USAGE_INCLUDE_ARCHIVED") == "1"
+LIVE_LIMITS_ENABLED = os.environ.get("CODEX_USAGE_LIVE_LIMITS", "1") != "0"
+LIVE_LIMITS_TIMEOUT_SECONDS = 3.0
 
 
 @dataclass
@@ -101,6 +107,103 @@ def safe_float(value: Any, default: float = 0.0) -> float:
 def env_int(name: str, default: int, minimum: int, maximum: int) -> int:
     value = safe_int(os.environ.get(name), default)
     return max(minimum, min(maximum, value))
+
+
+def normalize_live_window(window: dict[str, Any] | None) -> dict[str, Any]:
+    window = window or {}
+    return {
+        "used_percent": safe_float(window.get("usedPercent")),
+        "window_minutes": safe_int(window.get("windowDurationMins")),
+        "resets_at": safe_int(window.get("resetsAt")) or None,
+    }
+
+
+def normalize_live_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    credits = snapshot.get("credits") or {}
+    return {
+        "limit_id": snapshot.get("limitId") or "codex",
+        "limit_name": snapshot.get("limitName"),
+        "primary": normalize_live_window(snapshot.get("primary")),
+        "secondary": normalize_live_window(snapshot.get("secondary")),
+        "credits": {
+            "has_credits": bool(credits.get("hasCredits")),
+            "unlimited": bool(credits.get("unlimited")),
+            "balance": credits.get("balance"),
+        },
+        "plan_type": snapshot.get("planType") or "",
+        "rate_limit_reached_type": snapshot.get("rateLimitReachedType"),
+    }
+
+
+def fetch_live_rate_limits(timeout_seconds: float = LIVE_LIMITS_TIMEOUT_SECONDS) -> list[dict[str, Any]]:
+    """Read the same live account rate-limit snapshot that Codex Desktop uses."""
+    if not LIVE_LIMITS_ENABLED:
+        return []
+    codex = shutil.which("codex")
+    if not codex:
+        return []
+
+    proc: subprocess.Popen[str] | None = None
+    selector: selectors.BaseSelector | None = None
+    try:
+        proc = subprocess.Popen(
+            [codex, "app-server", "--stdio"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        if proc.stdin is None or proc.stdout is None:
+            return []
+
+        requests = (
+            {
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "clientInfo": {"name": "codex-usage-quickshell", "version": "1"},
+                    "capabilities": {},
+                },
+            },
+            {"id": 2, "method": "account/rateLimits/read"},
+        )
+        for request in requests:
+            proc.stdin.write(json.dumps(request, separators=(",", ":")) + "\n")
+        proc.stdin.flush()
+
+        selector = selectors.DefaultSelector()
+        selector.register(proc.stdout, selectors.EVENT_READ)
+        deadline = time.monotonic() + timeout_seconds
+
+        while time.monotonic() < deadline:
+            ready = selector.select(max(0.0, deadline - time.monotonic()))
+            if not ready:
+                break
+            line = proc.stdout.readline()
+            if not line:
+                break
+            try:
+                message = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if message.get("id") != 2:
+                continue
+            result = message.get("result") or {}
+            by_id = result.get("rateLimitsByLimitId") or {}
+            snapshots = list(by_id.values()) if by_id else [result.get("rateLimits")]
+            return [normalize_live_snapshot(snapshot) for snapshot in snapshots if isinstance(snapshot, dict)]
+    except (OSError, subprocess.SubprocessError):
+        return []
+    finally:
+        if selector is not None:
+            selector.close()
+        if proc is not None and proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=0.5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+    return []
 
 
 def format_reset(epoch: int | None, now: dt.datetime) -> str:
@@ -250,6 +353,9 @@ def build_limit_rows(rate_limits: dict[str, Any], now: dt.datetime) -> list[dict
     for key in ("primary", "secondary"):
         limit = rate_limits.get(key) or {}
         used = safe_float(limit.get("used_percent"))
+        resets_at = safe_int(limit.get("resets_at")) or None
+        if resets_at is not None and resets_at <= int(now.timestamp()):
+            used = 0.0
         remaining = max(0.0, min(100.0, 100.0 - used))
         window_minutes = safe_int(limit.get("window_minutes"))
         rows.append(
@@ -259,19 +365,28 @@ def build_limit_rows(rate_limits: dict[str, Any], now: dt.datetime) -> list[dict
                 "usedPercent": int(round(used)),
                 "remainingPercent": int(round(remaining)),
                 "remaining": round(remaining / 100, 4),
-                "reset": format_reset(safe_int(limit.get("resets_at")) or None, now),
+                "reset": format_reset(resets_at, now),
                 "windowMinutes": window_minutes or 0,
             }
         )
     return rows
 
 
-def build_limits(events: list[UsageEvent], now: dt.datetime) -> list[dict[str, Any]]:
+def build_limits(
+    events: list[UsageEvent],
+    now: dt.datetime,
+    live_rate_limits: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     latest_by_id: dict[str, dict[str, Any]] = {}
-    for event in events:
-        rate_limits = event.rate_limits or {}
-        limit_id = str(rate_limits.get("limit_id") or "codex")
-        latest_by_id[limit_id] = rate_limits
+    if live_rate_limits:
+        for rate_limits in live_rate_limits:
+            limit_id = str(rate_limits.get("limit_id") or "codex")
+            latest_by_id[limit_id] = rate_limits
+    else:
+        for event in events:
+            rate_limits = event.rate_limits or {}
+            limit_id = str(rate_limits.get("limit_id") or "codex")
+            latest_by_id[limit_id] = rate_limits
 
     def sort_key(item: tuple[str, dict[str, Any]]) -> tuple[int, str]:
         limit_id, rate_limits = item
@@ -344,7 +459,8 @@ def build_summary(days_back: int = 8) -> dict[str, Any]:
     today_events = [event for event in events if event.timestamp.date() == today]
     week_events = [event for event in events if event.timestamp.date() >= week_start]
     latest = events[-1] if events else None
-    limits = build_limits(events, now)
+    live_rate_limits = fetch_live_rate_limits()
+    limits = build_limits(events, now, live_rate_limits)
     main_limit = limits[0] if limits else {"rows": []}
     main_rows = main_limit.get("rows") or []
     primary_row = main_rows[0] if len(main_rows) > 0 else {}
@@ -408,6 +524,7 @@ def build_summary(days_back: int = 8) -> dict[str, Any]:
         "eventCount": len(today_events),
         "activity": sparkline(hourly, 18),
         "activityDetails": activity_details(hourly, 18),
+        "limitsSource": "live" if live_rate_limits else "local",
         "limits": limits,
     }
 

@@ -1,6 +1,6 @@
 # Codex Usage for Quickshell
 
-Codex Usage is a Quickshell module for the `ii` / illogical-impulse style Hyprland bar. It reads local Codex session logs from `~/.codex/sessions` and shows a compact top-bar indicator plus a smooth click-open usage panel.
+Codex Usage is a Quickshell module for the `ii` / illogical-impulse style Hyprland bar. It shows a compact top-bar indicator plus a smooth click-open usage panel for Codex usage and limits.
 
 The module is Codex-only. It does not read Claude projects or cloud billing pages.
 
@@ -9,7 +9,7 @@ The module is Codex-only. It does not read Claude projects or cloud billing page
 - Top-bar `Codex` indicator with theme-aware icon.
 - Click-open popup in the visual style of the system panel.
 - Local token totals for today, week, last turn, input, cached input, output, and reasoning tokens.
-- 5-hour and weekly limit cards when limit metadata is available in local Codex session records.
+- Live 5-hour and weekly limit cards from the local Codex app server, with local session-log fallback.
 - Activity bars for the last 18 hours.
 - Smooth loading skeletons and animated value changes instead of full visual resets on refresh.
 - Settings drawer with staged changes and Apply / Cancel.
@@ -21,6 +21,7 @@ The module is Codex-only. It does not read Claude projects or cloud billing page
 - Quickshell with a config using the `qs.modules.common`, `qs.services`, and `qs.modules.ii.bar` import layout.
 - Python 3.10+.
 - Codex Desktop or Codex CLI writing session files under `~/.codex/sessions`.
+- `codex` on `PATH` for live account limits. The collector falls back to local session metadata when unavailable.
 - Optional: `gsettings` for live system light/dark detection.
 
 ## Install
@@ -77,7 +78,13 @@ qs -c ii -d
 
 ## Privacy
 
-The collector reads local Codex session JSONL files in `~/.codex/sessions`. It emits numeric usage aggregates to Quickshell and does not send data over the network.
+The collector reads local Codex session JSONL files in `~/.codex/sessions` for token totals. By default it also asks the local Codex app server for the current account rate-limit snapshot, so limits stay fresh after mobile usage or reset windows.
+
+Disable live limit refresh if you want local-only behavior:
+
+```bash
+CODEX_USAGE_LIVE_LIMITS=0 ~/.config/quickshell/ii/scripts/codex-usage/codex_usage.py
+```
 
 Workspace names are not collected by default. Enable them explicitly only if you want that data:
 
@@ -101,7 +108,7 @@ Archived sessions are skipped by default to keep refreshes light. Include them e
 CODEX_USAGE_INCLUDE_ARCHIVED=1 ~/.config/quickshell/ii/scripts/codex-usage/codex_usage.py
 ```
 
-Large session histories can be expensive to scan frequently. The UI defaults to 15 seconds and clamps refresh values to at least 5 seconds.
+Large session histories can be expensive to scan frequently. The UI defaults to 15 seconds and clamps refresh values to at least 5 seconds. Live limit refresh has a short timeout and silently falls back to local session metadata if the Codex app server cannot respond.
 
 ## License
 
