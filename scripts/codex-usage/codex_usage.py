@@ -169,7 +169,52 @@ def codex_subprocess_env() -> dict[str, str]:
     env = os.environ.copy()
     extra_paths = [str(path.parent) for path in codex_search_path()]
     env["PATH"] = os.pathsep.join(extra_paths + [env.get("PATH", "")])
+    env.update(missing_proxy_env(env))
     return env
+
+
+def missing_proxy_env(env: dict[str, str]) -> dict[str, str]:
+    proxy_keys = {
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+        "no_proxy",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "NO_PROXY",
+    }
+    if any(env.get(key) for key in proxy_keys):
+        return {}
+
+    # Quickshell is often launched by the desktop session with a minimal
+    # environment, while Codex Desktop may have proxy settings injected by its
+    # own launcher. Reuse those proxy variables so the stdio app-server can
+    # reach the same account endpoint as the running app.
+    for proc_dir in pathlib.Path("/proc").iterdir():
+        if not proc_dir.name.isdigit():
+            continue
+        try:
+            cmdline = (proc_dir / "cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace")
+        except OSError:
+            continue
+        if "codex app-server" not in cmdline:
+            continue
+        try:
+            environ = (proc_dir / "environ").read_bytes().split(b"\0")
+        except OSError:
+            continue
+        inherited: dict[str, str] = {}
+        for item in environ:
+            if not item or b"=" not in item:
+                continue
+            key, value = item.split(b"=", 1)
+            key_text = key.decode(errors="replace")
+            if key_text in proxy_keys and value:
+                inherited[key_text] = value.decode(errors="surrogateescape")
+        if inherited:
+            return inherited
+    return {}
 
 
 def read_live_limits_cache(now: dt.datetime, max_age_seconds: int) -> RateLimitResult:

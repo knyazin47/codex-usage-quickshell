@@ -8,10 +8,14 @@ import QtQuick.Layouts
 MouseArea {
     id: root
 
+    readonly property bool usageServiceReady: CodexUsage.enabled
+
     hoverEnabled: true
     cursorShape: Qt.PointingHandCursor
     implicitWidth: contentRow.implicitWidth + 12
     implicitHeight: Appearance.sizes.barHeight
+
+    Component.onCompleted: CodexUsage.refresh(true)
 
     onClicked: usagePopup.toggle()
 

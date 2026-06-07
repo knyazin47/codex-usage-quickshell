@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.6
+
+- Kept the Codex usage service alive from the bar indicator instead of only loading it with the popup.
+- Reused proxy settings from the running Codex Desktop app-server when Quickshell starts with a minimal environment.
+
 ## 0.4.5
 
 - Kept live-probe refresh compatible with Quickshell installs that do not accept typed QML function annotations.
