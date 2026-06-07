@@ -118,7 +118,7 @@ Archived sessions are skipped by default to keep refreshes light. Include them e
 CODEX_USAGE_INCLUDE_ARCHIVED=1 ~/.config/quickshell/ii/scripts/codex-usage/codex_usage.py
 ```
 
-Large session histories can be expensive to scan frequently. The UI defaults to 15 seconds and clamps refresh values to at least 5 seconds. Live limit refresh has a short timeout and falls back to cached or local session metadata if the Codex app server cannot respond. The refresh button bypasses the short live-limit cache for an immediate account-limit check.
+Large session histories can be expensive to scan frequently. The UI defaults to 15 seconds and clamps refresh values to at least 5 seconds. Live limit refresh has a short timeout and falls back to cached or local session metadata if the Codex app server cannot respond. While the panel is on `local` or `stale`, the configured auto-refresh interval keeps probing live limits, so starting Codex Desktop later can switch the source back to live data without pressing refresh. The refresh button and refresh-interval buttons bypass the short live-limit cache for an immediate account-limit check.
 
 Live limit cache timing can be tuned:
 

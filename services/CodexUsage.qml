@@ -57,6 +57,10 @@ Singleton {
     readonly property color coolAccentColor: "#7aa2ff"
     readonly property color warmAccentColor: "#aa83ff"
 
+    function needsLiveProbe(): bool {
+        return root.limitsSource !== "live" && root.limitsSource !== "cache";
+    }
+
     function refresh(forceLive): void {
         if (!root.enabled)
             return;
@@ -124,7 +128,7 @@ Singleton {
         interval: Math.max(5, Config.options.bar.codexUsage.refreshInterval) * 1000
         running: root.enabled
         repeat: true
-        onTriggered: root.refresh()
+        onTriggered: root.refresh(root.needsLiveProbe())
     }
 
     Process {

@@ -189,7 +189,7 @@ def read_live_limits_cache(now: dt.datetime, max_age_seconds: int) -> RateLimitR
         return RateLimitResult([], "local", synced_at)
 
     age_seconds = max(0, int((now - synced_at).total_seconds()))
-    if age_seconds <= max_age_seconds:
+    if age_seconds < max_age_seconds:
         source = "cache" if age_seconds <= live_cache_seconds() else "stale"
         return RateLimitResult(
             snapshots,

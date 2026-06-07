@@ -4,6 +4,7 @@
 
 - Fixed live-limit refresh getting stuck on stale local session metadata when the Codex app server briefly returned an empty rate-limit payload.
 - Made the refresh button bypass the short live-limit cache and retry immediately after an in-flight refresh.
+- Made automatic refresh probe live limits again while the source is `local` or `stale`, so starting Codex Desktop later can switch the panel back to live data.
 - Removed Apply / Cancel and made language and refresh interval apply immediately.
 - Added a soft fade pulse when language changes so translated text swaps less abruptly.
 - Updated the settings drawer to behave as a fully live control surface.

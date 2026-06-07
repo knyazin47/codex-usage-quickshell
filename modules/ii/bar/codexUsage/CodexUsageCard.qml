@@ -386,6 +386,7 @@ Item {
 
     function applyRefreshInterval(seconds) {
         Config.options.bar.codexUsage.refreshInterval = seconds;
+        CodexUsage.refresh(true);
     }
 
     function applyCustomAccentBase(value) {
