@@ -57,7 +57,7 @@ Singleton {
     readonly property color coolAccentColor: "#7aa2ff"
     readonly property color warmAccentColor: "#aa83ff"
 
-    function needsLiveProbe(): bool {
+    function needsLiveProbe() {
         return root.limitsSource !== "live" && root.limitsSource !== "cache";
     }
 

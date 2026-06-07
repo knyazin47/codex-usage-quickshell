@@ -1,10 +1,18 @@
 # Changelog
 
-## 0.4.3
+## 0.4.5
+
+- Kept live-probe refresh compatible with Quickshell installs that do not accept typed QML function annotations.
+- Applied the auto-probe behavior to the installed Quickshell config so the live panel can recover from `local` after Codex Desktop starts.
+
+## 0.4.4
 
 - Fixed live-limit refresh getting stuck on stale local session metadata when the Codex app server briefly returned an empty rate-limit payload.
 - Made the refresh button bypass the short live-limit cache and retry immediately after an in-flight refresh.
 - Made automatic refresh probe live limits again while the source is `local` or `stale`, so starting Codex Desktop later can switch the panel back to live data.
+
+## 0.4.3
+
 - Removed Apply / Cancel and made language and refresh interval apply immediately.
 - Added a soft fade pulse when language changes so translated text swaps less abruptly.
 - Updated the settings drawer to behave as a fully live control surface.
